@@ -5,6 +5,8 @@ const { execSync, exec } = require('child_process')
 //exec = util.promisify(exec)
 const fs = require('fs')
 const yaml = require('js-yaml');
+const http = require('http')
+const { parse } = require('querystring');
 
 
 function syscmd(cmd) {
@@ -22,15 +24,27 @@ function syscmd(cmd) {
 }
 
 
-function getContainerIp4AddressFromListJSON(json,name){
-	// var aa = json.find(c=>c.name==name).state.network.eth0.addresses
-	// for (a of aa)
-	// 	console.log(a)
-	return json.find(c=>c.name==name)
-		.state.network.eth0.addresses.find(a=>a.family=='inet')
+// function getContainerIp4AddressFromListJSON(json,name){
+// 	// var aa = json.find(c=>c.name==name).state.network.eth0.addresses
+// 	// for (a of aa)
+// 	// 	console.log(a)
+// 	return json.find(c=>c.name==name)
+// 		.state.network.eth0.addresses.find(a=>a.family=='inet')
+// 		.address
+// }
+
+//	var contip4 = getContainerIp4AddressFromListJSON(
+//		JSON.parse(syscmd(`lxc list --format json`)), lxcContName
+//	)
+
+function getContainerIp4Address(contName){
+	return JSON.parse(syscmd(`lxc list --format json`))
+		.find(c=>c.name==contName)
+		.state.network.eth0.addresses
+		.find(a=>a.family=='inet')
 		.address
 }
-	
+
 
 async function createProfile(
 	copyProfileName,
@@ -58,7 +72,16 @@ async function createProfile(
 			"permissions":'0644'
 		}
 	]
-	
+
+	if (true) {
+		try {
+			let tz = fs.readFileSync(`/etc/timezone`)
+			cloudInitJSON.timezone = tz
+			console.log("read host /etc/timezone to override container timezone")
+		} catch(e) {
+			console.log("couldn't read host /etc/timezone to override container timezone")
+		}
+	}
 
 	// convert the cloud init instructions to yaml format, which is a string.
 	var cldinit_yml = yaml.safeDump(cloudInitJSON)
@@ -156,4 +179,5 @@ async function waitPhoneHome(phoneHomeToAddr, phoneHomePort){
 
 exports.createProfile =  createProfile
 exports.syscmd = syscmd
-exports.getContainerIp4AddressFromListJSON = getContainerIp4AddressFromListJSON
+exports.getContainerIp4Address = getContainerIp4Address
+exports.waitPhoneHome = waitPhoneHome
