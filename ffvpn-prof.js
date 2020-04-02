@@ -37,13 +37,9 @@ async function createProfile(
 	profileName,
 	cloudInitJSON,
 	authorizedPubKeyFilename,
-	phoneHomeURL) {
-
-	//function getFileText(filename) {
-	//	let t = fs.readFileSync(filename, 'utf8')
-	//	return t
-	//}
-
+	phoneHomeURL,
+	overrideFileContent, overrideContFilename
+) {
 
 	// embed ssh public key which will be used to send into the ffvpn container
 	cloudInitJSON.ssh_authorized_keys= [
@@ -55,6 +51,14 @@ async function createProfile(
 	 	"post": "all",
 	 	"tries": 10
 	}
+	cloudInitJSON.write_files = [
+		{
+			"content": overrideFileContent,
+			"path":overrideContFilename,
+			"permissions":'0644'
+		}
+	]
+	
 
 	// convert the cloud init instructions to yaml format, which is a string.
 	var cldinit_yml = yaml.safeDump(cloudInitJSON)
@@ -107,6 +111,48 @@ async function createProfile(
 	})					 
 }
 
+async function waitPhoneHome(phoneHomeToAddr, phoneHomePort){
+	return new Promise( (resolve, reject) => {
+
+		function collectRequestData(request, callback) {
+			const FORM_URLENCODED = 'application/x-www-form-urlencoded';
+			if(request.headers['content-type'] === FORM_URLENCODED) {
+				let body = '';
+				request.on('data', chunk => {
+					body += chunk.toString();
+				});
+				request.on('end', () => {
+					callback(parse(body));
+				});
+			}
+			else {
+				callback(null);
+			}
+		}		
+		///var server=null;
+		const requestHandler = (request, response) => {
+			//console.log(request.method)
+			if (request.method === 'POST') {
+				collectRequestData(request, result => {
+					//console.log("phone_home result:\n:", result);
+					console.log("phone_home signal received");
+					response.end();
+					server.close();
+					resolve(result);
+				})
+			}
+        }
+		
+		const server = http.createServer(requestHandler)
+
+		server.listen(phoneHomePort, phoneHomeToAddr, (err) => {
+			if (err) {
+				reject('waitPhoneHome server.listen callback, ERROR:\n' + err)
+			}
+			//console.log(`waitPhoneHome server.listen callback, not error but unexpected`)
+		})
+	})
+}
 
 exports.createProfile =  createProfile
 exports.syscmd = syscmd

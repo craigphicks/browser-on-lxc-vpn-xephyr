@@ -20,11 +20,12 @@ const lxcCopyProfileName = 'default'
 const lxcProfileName = 'ffvpn-prof'
 const lxcContBridgeName = 'lxdbr0'
 const phoneHomePort = 3000
-//const cloudInitPhoneHomeIP4 = "10.64.64.1"
-//const cloudInitPhoneHomeURL = `http://${cloudInitPhoneHomeIP4}:${cloudInitPhoneHomePort}`
+const vpnClientKeySrcFilename = `/tmp/client.ovpn`
+const contUsername = 'ubunutu'
+
 
 // package_upgrade: true, ssha_authorized_keys: ...
-// will added internally
+// will be added internally
 var cloudInitJSON = {
 	"locale": "en_US.UTF-8", 
 	"timezone": "America/Los_Angeles", 
@@ -76,13 +77,18 @@ async function main(){
 	let phoneHomeToAddr = phoneHomeFromCDN.split('/')[0]
 	let phoneHomeURL = `http://${phoneHomeToAddr}:${phoneHomePort}`
 
+	// the file containing the fix for openvpn-client to run in, and where it should go
+	let overrideContFn = `/etc/systemd/system/openvpn-client\@.service.d/override.conf`
+	
 	// create profile
 	await createProfile(
 		lxcCopyProfileName,
 		lxcProfileName,
 		cloudInitJSON,
 		`${sshKeyFilename}.pub`,
-		phoneHomeURL
+		phoneHomeURL,
+		'[Service]\nLimitNPROC=infinity\n',
+		overrideContFn
 	)
 
 	console.log("PROFILE done ...")
@@ -117,6 +123,21 @@ async function main(){
 	)
 
 	console.log("CONTAINER ip4 address is " + contip4)
+
+	// copy the vpn client cert to container
+	//  we didn't put cert in cloud-init for privacy's sake.
+	syscmd(`lxc file push  ${vpnClientKeySrcFilename} ` + 
+		   `${lxcContName}/etc/openvpn/client/client.conf --gid 0 --uid 0`)
+
+	syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`)
+
+	console.log(syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`))
+	console.log('STATUS of openvpn-client on CONTAINER:\n',
+		syscmd(`lxc exec ${lxcContName} -- systemctl status openvpn-client@client`))
+	
+		   
+		   
+		   
 }
 
 
@@ -140,7 +161,7 @@ async function waitPhoneHome(phoneHomeToAddr, phoneHomePort){
 		}		
 		///var server=null;
 		const requestHandler = (request, response) => {
-			console.log(request.method)
+			//console.log(request.method)
 			if (request.method === 'POST') {
 				collectRequestData(request, result => {
 					//console.log("phone_home result:\n:", result);
