@@ -12,11 +12,11 @@ and placed the client key in a file on the host:
 
 # Usage
 
-  node index.js init
-     -intialiize container
-  node index.js browse
-    - restart a stopped container and start browser
-    - NOTE: program will not exit until Xephyr and the browser are closed.
+ - node index.js init
+   -intialiize container
+ - node index.js browse
+   - restart a stopped container and start browser
+   - NOTE: program will not exit until Xephyr and the browser are closed.
       (In no-Xephyr mode, until the browser is closed).
       You may run in background "node index.js browse &" to free up terminal.
       
