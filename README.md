@@ -73,6 +73,8 @@ sudo ufw allow from <a.b.c.d>/<n> to <a.b.c.d> port 3000 proto tcp
    - NOTE2: *Only when using Xephyr* - You may find that when clicking on firefox menu icon the menu doesn't drop down correctly.  To fix that try typing 'about:profiles' into the address bar, and then clicking on "Restart without addons".  When Firefox reopens, the menu *might* work.  Otherwise, `<ctrl>+<shift>+w` will close firefox, and the setting page can be accessed with `about:preferences`.
    - NOTE3: VPN function can be confirmed by searching for `myip` with the browser- the VPN address should appear. 
 
+ - `node index.js ufwRule`
+   - prints out the `ufw` rule whill will be automatically added unless the `-nufw` flag is used with `init`.  The is helpful for checking address and subnet format and value, and for adding a rule manually whenn necesary. 
       
 # Other Parameters
 
