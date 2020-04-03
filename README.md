@@ -16,6 +16,10 @@ The resulting unprivileged linux container has no access to the host filesystem.
 This software was tested on a host running Ubuntu 18.04. 
 It should certainly work on Ubuntu 18.x, 19.x.
 
+- `node` version `v10.16.3` or higher
+
+- `npm` version `6.14.4` or higher
+
 - A *openvpn* VPN should already be setup, and the *openvpn* client certificate
 should already be placed on the host as a file named <br/>
 `/home/<username>/ffvpn-client.ovpn` <br/>
