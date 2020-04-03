@@ -1,3 +1,6 @@
+Craig P Hicks copyright 2020 
+see LICENSE.md for license
+
 # browser-on-lxc-vpn-xephyr
 
 Javascript module to create (from a virgin generic ubuntu lxc) an unprivileged linux container 
@@ -106,8 +109,11 @@ You might worry about running as root, but if you used a decent password the big
 
 # Todo
 
-- Clean up.
 - Publish on NPM.
+- Figure out how to add audio over reverse ssh (presently audio not enabled).
+  C.f. https://superuser.com/a/311830
+- Add test suite (even though its a tiny project)
+- Clean up.
 - Allow multi browser types
 - Allow multiple browser instances each with own Xephyr to be run simultaneously 
 - Perhaps enable remote containers - 
