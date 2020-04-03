@@ -37,6 +37,9 @@ function syscmd(cmd) {
 //		JSON.parse(syscmd(`lxc list --format json`)), lxcContName
 //	)
 
+
+
+
 function getContainerIp4Address(contName){
 	return JSON.parse(syscmd(`lxc list --format json`))
 		.find(c=>c.name==contName)

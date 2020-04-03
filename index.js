@@ -7,7 +7,8 @@ const yaml = require('js-yaml');
 const { createProfile,
 		syscmd,
 		waitPhoneHome,
-		getContainerIp4Address }
+		getContainerIp4Address
+	  }
 	  = require('./ffvpn-prof.js')
 
 
@@ -29,8 +30,6 @@ const contUsername = 'ubunutu'
 const SCREENSIZE = '1920x1200'
 //const SCREENSIZE = '2020x1300'
 
-const XServerXephyr = true
-
 // end of Parameters
 //////////////////////////////////////////
 
@@ -39,6 +38,13 @@ const XServerXephyr = true
 const XServerXephyr_host0_cont1 = 1
 const XServerXephyr_manual = false
 ////////////
+
+const dropDownFixMsg = 
+`#### NOTE! ####
+You may find that when clicking on firefox menu icon the menu doesn't appear correctly.
+To fix that try typing 'about:profiles' into the address bar, and then clicking on
+"Restart without addons".  When Firefox reopens, the menu *might* work.
+`
 
 
 // package_upgrade: true, ssha_authorized_keys: ...
@@ -61,19 +67,37 @@ var cloudInitJSON = {
 	]
 }
 
-async function initialize() {
+function getPhoneHomeInfo(){
+	let phoneHomeFromCDN = yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)).
+		config['ipv4.address']
+	let phoneHomeToAddr = phoneHomeFromCDN.split('/')[0]
+	let phoneHomeURL = `http://${phoneHomeToAddr}:${phoneHomePort}`
+	return {
+		fromCDN:phoneHomeFromCDN,
+		toAddr:phoneHomeToAddr,
+		URL:phoneHomeURL
+	}
+}
+
+function makeUfwRule(phoneHomeInfo){
+	let ret = 
+		`sudo ufw allow from ${phoneHomeInfo.fromCDN} to ${phoneHomeInfo.toAddr} ` 
+		+ `port ${phoneHomePort} proto tcp`;
+	return ret
+}
+
+
+async function initialize(args) {
 	// create an instance of a container from that image
-	// check name already 
-	var clist = JSON.parse(syscmd(`lxc list --format json`))
-	//console.log(clist)
+
+	let doUfwRule = true;
+	if (args.indexOf('-nufw')>=0)
+		doUfwRule = false;
+
+	// if name exists delete it
+	let clist = JSON.parse(syscmd(`lxc list --format json`))
 	if (clist.find(c=>c.name==lxcContName))
 		syscmd(`lxc delete --force ${lxcContName}`) 
-	// for (c of clist) {
-	// 	if (c.name==lxcContName)
-	// 		//throw `container ${lxcContName} already exists`
-	// 		syscmd(`lxc delete --force ${lxcContName}`) 
-	// 	//console.log(c.name, ' !== ', lxcContName) 
-
 
 	// create key
 	if (!(fs.existsSync(`${sshKeyFilename}.pub`) &&
@@ -94,10 +118,12 @@ async function initialize() {
 	// determine cloud init phone_home post destination and ufw rule to allow it
 	// (depends on bridge ${lxcContBridgeName})
 	//console.log(yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)))
-	let phoneHomeFromCDN = yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)).
-		config['ipv4.address']
-	let phoneHomeToAddr = phoneHomeFromCDN.split('/')[0]
-	let phoneHomeURL = `http://${phoneHomeToAddr}:${phoneHomePort}`
+
+	phoneHomeInfo = getPhoneHomeInfo();
+	// let phoneHomeFromCDN = yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)).
+	// 	config['ipv4.address']
+	// let phoneHomeToAddr = phoneHomeFromCDN.split('/')[0]
+	// let phoneHomeURL = `http://${phoneHomeToAddr}:${phoneHomePort}`
 
 	// the file containing the fix for openvpn-client to run in, and where it should go
 	let overrideContFn = `/etc/systemd/system/openvpn-client\@.service.d/override.conf`
@@ -108,7 +134,7 @@ async function initialize() {
 		lxcProfileName,
 		cloudInitJSON,
 		`${sshKeyFilename}.pub`,
-		phoneHomeURL,
+		phoneHomeInfo.URL,
 		'[Service]\nLimitNPROC=infinity\n',
 		overrideContFn
 	)
@@ -121,14 +147,18 @@ async function initialize() {
 	}
 	console.log("IMAGE done ...")
 
-	let ufwRuleCmd =
-		`sudo ufw allow from ${phoneHomeFromCDN} to ${phoneHomeToAddr} ` 
-		+ `port ${phoneHomePort} proto tcp`;
-	console.log(`ADDING UFW RULE for phome_home:\n${ufwRuleCmd}`)
-	console.log(syscmd(ufwRuleCmd))
-
+	if (doUfwRule){
+		//console.log(phoneHomeInfo)
+		console.log('DEBUG: ',makeUfwRule(phoneHomeInfo))
+		let ufwRuleCmd = makeUfwRule(phoneHomeInfo)
+			// `sudo ufw allow from ${phoneHomeInfo.fromCDN} to ${phoneHomeInfo.toAddr} ` 
+			// + `port ${phoneHomePort} proto tcp`;
+		console.log(`ADDING UFW RULE for phome_home:\n${ufwRuleCmd}`)
+		console.log(syscmd(ufwRuleCmd))
+	}
+	
 	// set up receiver for cloud init phone home signalling cloud init end
-	var promPhoneHome = waitPhoneHome(phoneHomeToAddr, phoneHomePort)
+	var promPhoneHome = waitPhoneHome(phoneHomeInfo.toAddr, phoneHomePort)
 
 	// create the container with cloud init customization
 	syscmd(`lxc launch ${lxcImageAlias} ${lxcContName} -p ${lxcProfileName}`)
@@ -157,108 +187,74 @@ async function initialize() {
 
 }
 
-async function browse() {
+async function browse(args) {
+	let XServerXephyr=true
+	if (args.indexOf('-nxephyr')>=0)
+		XServerXephyr = false;
+	
+	let xephyrPassThruArgs=''
+	if (args.indexOf('-xephyrargs')>=0){
+		xephyrPassThruArgs = args[args.indexOf('-xephyrargs')+1]
+	}
+
 	const setTimeoutPromise = util.promisify(setTimeout);
 	var contip4 = getContainerIp4Address(lxcContName)
 	if (XServerXephyr) {
-		console.log(`
-#### NOTE! ####
-You may find that when clicking on firefox menu icon the menu doesn't appear correctly.
-To fix that try typing 'about:profiles' into the address bar, and then clicking on
-"Restart without addons".  When Firefox reopens, the menu *might* work.
-`)
-		if (!XServerXephyr_manual) {
-			if (XServerXephyr_host0_cont1==0) {
-				throw Error(
-					`this combination of settings not currently implemented:
+		console.log(dropDownFixMsg)
+		if (XServerXephyr_host0_cont1==0) {
+			throw Error(
+				`this combination of settings not currently implemented:
 XServerXephyr==true  
 XServerXephyr_manual==false  
-XServerXephyr_host0_cont1==0`) 
-				// NOTE:  Currently this branch not workingL Xephyr window appears but
-				// hangs there and "console.log('Xephyr started')" not printed.
-				// However, executing the commands manually (alternate branch)
-				// does work.
-				
-				// Xephyr is an X server alternative,
-				// but also borrows some function from the actual X server.
-				// However, the X server is safer from snooping with Xephyr in the middle.
-				// How much, if any, Xephyr and the orginal X differ in graphic results,
-				// e.g., from the prespective of digital fingerprints, is unknown to me.
-				syscmd(`Xephyr -ac -screen ${SCREENSIZE} -br -terminate -reset :2 &`)
-				console.log('Xephyr started')
-
-				// from host ssh execute browser in linux container 
-				// while serving X graphics through ssh from host.
-				// However, in this case X is not A's origianl X server,
-				// but Xephyr servering X. 
-				await setTimeoutPromise(3000).then(() => {
-					syscmd(`DISPLAY=:2 ssh -Y ubuntu@${contip4} 'DISPLAY=:10 firefox' &`)
-					console.log('Firefox started')
-				})
-				
-				// wait 3 seconds and shrink to allow for Xephyr margins
-				await setTimeoutPromise(3000).then(() => {
- 					syscmd(
-						`DISPLAY=:2 ssh -Y ubuntu@${contip4} ` + 
-							`'DISPLAY=:10 xdotool search --onlyvisible --class Firefox windowsize 95% 95%'`
-					);
-  					console.log('xdotool shrink 95% executed')
-				})
-			} else { // XServerXephyr_host0_cont1==1
-				let rcmd = `
-Xephyr -ac -screen ${SCREENSIZE} -br -terminate -reset :2 &
+XServerXephyr_host0_cont1==0`); 
+		} else { // XServerXephyr_host0_cont1==1
+			let rcmd = `
+Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -reset -terminate  ${xephyrPassThruArgs} -zap :2 &
 sleep 1
 DISPLAY=:2 firefox &
 sleep 3
 DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 95% 95%
 `
-				
-				console.log('starting firefox on Xephyr')
-				syscmd(`ssh -Y ubuntu@${contip4} /bin/bash "${rcmd}" &`)
-				console.log('firefox on Xephyr finished')
-				
-				// let rcmd = `Xephyr -ac -screen ${SCREENSIZE} -br -terminate -reset :2 &`
-				// syscmd(`ssh -Y ubuntu@${contip4} "${rcmd}"`);
-				// console.log('Xephyr started')
+			
+			console.log('starting firefox on Xephyr')
+			syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`
+				   + ` ubuntu@${contip4} /bin/bash "${rcmd}" &`)
+			console.log('firefox on Xephyr finished')
+			
+			// let rcmd = `Xephyr -ac -screen ${SCREENSIZE} -br -terminate -reset :2 &`
+			// syscmd(`ssh -Y ubuntu@${contip4} "${rcmd}"`);
+			// console.log('Xephyr started')
 
-				// rcmd = "DISPLAY=:2 firefox &"
-				// syscmd(`ssh -Y ubuntu@${contip4} "${rcmd}"`);
-				// console.log('firefox started')
-			}
-		} else {
-				throw Error(
-					`this combination of settings not currently implemented:
-XServerXephyr==true  
-XServerXephyr_manual==true  
-XServerXephyr_host0_cont1==<any value>`) 
-			// Manual branch allowing cut and paste of commands, which DOES work.
-			console.log("CUT AND PASTE THESE COMMANDS:")
-			console.log(`Xephyr -ac -screen ${SCREENSIZE} -br -terminate -reset :2 &`)
-			console.log(`DISPLAY=:2 ssh -Y ubuntu@${contip4} 'DISPLAY=:10 firefox' &`)
-			console.log('# wait three seconds please ')
-			let rcmd = "'DISPLAY=:10 xdotool search --onlyvisible --class Firefox windowsize 95% 95%'"
-			console.log(`DISPLAY=:2 ssh -Y ubuntu@${contip4} ` + rcmd)
+			// rcmd = "DISPLAY=:2 firefox &"
+			// syscmd(`ssh -Y ubuntu@${contip4} "${rcmd}"`);
+			// console.log('firefox started')
 		}
 	} else {  // XServerXephyr == false 
 		// from host ssh execute browser in linux container 
 		// while serving X graphics through ssh from host.
-		// This is the most reliable and predictably behaving branch.
 		// Graphics are exactly the host graphics,
-		// digital fingerprint is certainly the same.
-		syscmd(`ssh -Y ubuntu@${contip4} firefox &`)
+		// digital fingerprint graphic componeents will certainly be the same.
+		syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`
+			   + ` ubuntu@${contip4} firefox &`)
 		console.log('Firefox started')		
 	}
 }
-	
+
+
+
 
 function help(){
 	console.log(`usage: 
-  node index.js init
+  node index.js init [-nufw]
      -intialiize container
-  node index.js browse
+  node index.js browse [-nxephyr] [-xephyrargs <string>]
     - restart a stopped container and start browser
     - NOTE: program will not exit until browser or Xephyr/browser are closed.
       You may run in background "node iundex.js browse &" to free up terminal.
+  node index.js ufwRule
+    - Show the ufw rule command that would be written - for your information.  
+
+${dropDownFixMsg}
 `)
 }
 
@@ -270,10 +266,13 @@ async function main(){
 	else {
 		switch (process.argv[2]){
 		case 'init':
-			await initialize()
+			await initialize(process.argv.slice(3))
 			// continue to browse
 		case 'browse':
-			await browse();
+			await browse(process.argv.slice(3));
+			break;
+		case 'ufwRule':
+			console.log(makeUfwRule(getPhoneHomeInfo()));
 			break;
 		default: help();
 		}
