@@ -27,7 +27,7 @@ const phoneHomePort = 3000
 //const vpnClientKeySrcFilename = `/tmp/client.ovpn`
 const contUsername = 'ubunutu'
 //const SCREENSIZE = '1280x800'
-const SCREENSIZE = '1920x1200'
+//const SCREENSIZE = '1920x1200'
 //const SCREENSIZE = '2020x1300'
 
 // end of Parameters
@@ -174,16 +174,16 @@ async function initialize(args) {
 
 	console.log("CONTAINER ip4 address is " + contip4)
 
-	// copy the vpn client cert to container
-	//  we didn't put cert in cloud-init for privacy's sake.
+	// Copy the vpn client cert to container.
+	// For privacy's sake we didn't put cert in cloud-init data.
 	syscmd(`lxc file push  ${vpnClientCertFilename} ` + 
 		   `${lxcContName}/etc/openvpn/client/client.conf --gid 0 --uid 0`)
 
-	syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`)
+	//syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`)
 
 	console.log(syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`))
-	console.log('STATUS of openvpn-client on CONTAINER:\n',
-				syscmd(`lxc exec ${lxcContName} -- systemctl status openvpn-client@client`))
+	//console.log('STATUS of openvpn-client on CONTAINER:\n',
+	//			syscmd(`lxc exec ${lxcContName} -- systemctl status openvpn-client@client`))
 
 }
 
@@ -195,6 +195,10 @@ async function browse(args) {
 	let xephyrPassThruArgs=''
 	if (args.indexOf('-xephyrargs')>=0){
 		xephyrPassThruArgs = args[args.indexOf('-xephyrargs')+1]
+	}
+
+	if args.indexOf('-screen')>=0){
+		SCREENSIZE = args[args.indexOf('-screen')+1]
 	}
 
 	const setTimeoutPromise = util.promisify(setTimeout);
@@ -209,7 +213,7 @@ XServerXephyr_manual==false
 XServerXephyr_host0_cont1==0`); 
 		} else { // XServerXephyr_host0_cont1==1
 			let rcmd = `
-Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -reset -terminate  ${xephyrPassThruArgs} -zap :2 &
+Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -reset -terminate -zap ${xephyrPassThruArgs} :2 &
 sleep 1
 DISPLAY=:2 firefox &
 sleep 3
