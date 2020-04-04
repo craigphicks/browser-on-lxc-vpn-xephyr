@@ -49,18 +49,49 @@ sudo ufw allow from <a.b.c.d>/<n> to <a.b.c.d> port 3000 proto tcp
 
 # Usage
 
- - `node index.js init [-nufw]`
-   - Intialiizes container.  Only required once unless hard coded parameters are changed.
-   - use argument `-nufw` to suppress adding the `ufw` rule.  There is no harm in adding the rule again if it is already present.  Two reasons for not adding the rule - <br/>
+## Breif
+
+ - `node index.js init [-nufw] [-ntz]`<br/>
+   Initialize container
+   - `-nufw` 
+     Don't automatically add ufw rule.
+   - `-ntz` 
+     Don't use host /etc/timezone in container, the default is UTC.
+
+ - `node index.js browse [-nxephyr] [-screen <W>x<H>] [-xephyrargs <string of pass thru args>]`<br/>
+   Launch Firefox browser
+   - `-nxephyr`<br/>
+     Don't use Xephyr on container, use host Xserver directly
+   - `screen <W>x<H>`<br/>
+       Initial size of Xephyr screen. Default is `1920x1200`.
+   - `-xephyrargs <string of pass thru args>`<br/>
+     Pass string of args directly to invocation of Xephyr
+
+ - `node index.js ufwRule`<br/>
+   Print out what the ufw rule would be to allow container to 'phone home' on init completion.
+
+## TL;DR
+
+ - `node index.js init [-nufw] [-ntz]`
+   - Intialiizes container. Only required once unless changing parameters.
+   Container automatically runs upon host reboot. View with `lxc list`.
+   - `-nufw`<br/>
+   Don't automatically add the `ufw` rule.<br/> 
+   There is no harm in adding the rule again if it is already present.<br/>
+   Two reasons for not adding the rule - <br/>
      1.  `ufw` is not installed on the system <br/>
      2.  `sudo` requires a password <br/>
 	 If the rule is not added, the user must ensure that the *phone home* action signaling the containers end of initialization is not blocked by a firewall.
+   -  `-ntz`<br/> 
+   prevent host `/etc/timezone` from being copied to container.
+   *UTC* will be the container timezone.
      
- - `node index.js browse [-nxephyr] [-xephyrargs <string of pass thru args>]`
+ - `node index.js browse [-nxephyr] [-screen <W>x<H>] [-xephyrargs <string of pass thru args>]`
    - requires <br/>
      1. That the container be in the running state. <br/>
 	 2. That another Xephyr instance is not already running on the container.
-   - `-nxephyr` - Used to run a browser in the container without `Xephyr`, instead running 
+   - `-nxephyr` 
+     - Used to run a browser in the container without `Xephyr`, instead running 
    directly on the host Xserver via an ssh pipe.  The browsers ip traffic will still be 
    routed through the VPN, but the host Xserver buffer content might be not as protected from 
    snooping, and the browser fingerprint will be more similar to that of a browser 
@@ -69,11 +100,10 @@ sudo ufw allow from <a.b.c.d>/<n> to <a.b.c.d> port 3000 proto tcp
    - `-screen <W>x<H>`
      - default value: `1920x1200`
 	 - specify the Xephyr screensize, e.g. `-screen 1280x800`
-   - `-xephyrargs` - Used to pass a string of arguments to `Xephyr`.  Run `Xephyr --help` to see what is available.  The arguments <be/>
+   - `-xephyrargs` 
+     - Used to pass a string of arguments to `Xephyr`.  Run `Xephyr --help` to see what is available.  The arguments <br/>
    `-ac -br -screen <screensize> -resizeable -reset -terminate -zap`<br/>
-   are already hard coded, but <br/>
-   `-reset -terminate -zap`<br/>
-   do not seem be always working as expected.
+   are already hard coded.
    - NOTE1: The program will not exit until Xephyr and the browser are closed.
       (Or in no-Xephyr mode, until the browser is closed).
       You may run in the background with "node index.js browse &" to free up the terminal.

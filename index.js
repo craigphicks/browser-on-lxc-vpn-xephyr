@@ -40,7 +40,7 @@ const XServerXephyr_manual = false
 ////////////
 
 const dropDownFixMsg = 
-`#### NOTE! ####
+	  `#### NOTE! ####
 You may find that when clicking on firefox menu icon the menu doesn't appear correctly.
 To fix that try typing 'about:profiles' into the address bar, and then clicking on
 "Restart without addons".  When Firefox reopens, the menu *might* work.
@@ -50,7 +50,7 @@ To fix that try typing 'about:profiles' into the address bar, and then clicking 
 // package_upgrade: true, ssha_authorized_keys: ...
 // will be added internally
 var cloudInitJSON = {
-//	"locale": "en_US.UTF-8", 
+	//	"locale": "en_US.UTF-8", 
 	"locale": process.env.LANG, 
 	"timezone": timezone, 
 	"packages": [
@@ -94,6 +94,10 @@ async function initialize(args) {
 	if (args.indexOf('-nufw')>=0)
 		doUfwRule = false;
 
+	let noCopyHostTimezone = false;
+	if (args.indexOf('-ntz')>=0)
+		noCopyHostTimezone = false;
+
 	// if name exists delete it
 	let clist = JSON.parse(syscmd(`lxc list --format json`))
 	if (clist.find(c=>c.name==lxcContName))
@@ -136,7 +140,8 @@ async function initialize(args) {
 		`${sshKeyFilename}.pub`,
 		phoneHomeInfo.URL,
 		'[Service]\nLimitNPROC=infinity\n',
-		overrideContFn
+		overrideContFn,
+		noCopyHostTimezone
 	)
 
 	console.log("PROFILE done ...")
@@ -151,8 +156,8 @@ async function initialize(args) {
 		//console.log(phoneHomeInfo)
 		console.log('DEBUG: ',makeUfwRule(phoneHomeInfo))
 		let ufwRuleCmd = makeUfwRule(phoneHomeInfo)
-			// `sudo ufw allow from ${phoneHomeInfo.fromCDN} to ${phoneHomeInfo.toAddr} ` 
-			// + `port ${phoneHomePort} proto tcp`;
+		// `sudo ufw allow from ${phoneHomeInfo.fromCDN} to ${phoneHomeInfo.toAddr} ` 
+		// + `port ${phoneHomePort} proto tcp`;
 		console.log(`ADDING UFW RULE for phome_home:\n${ufwRuleCmd}`)
 		console.log(syscmd(ufwRuleCmd))
 	}
@@ -197,7 +202,8 @@ async function browse(args) {
 		xephyrPassThruArgs = args[args.indexOf('-xephyrargs')+1]
 	}
 
-	if args.indexOf('-screen')>=0){
+	let SCREENSIZE = '1920x1200';
+	if (args.indexOf('-screen')>=0){
 		SCREENSIZE = args[args.indexOf('-screen')+1]
 	}
 
@@ -221,8 +227,8 @@ DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 95% 95%
 `
 			
 			console.log('starting firefox on Xephyr')
-			syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`
-				   + ` ubuntu@${contip4} /bin/bash "${rcmd}" &`)
+			syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+				   + `-i ${sshKeyFilename}  ubuntu@${contip4} /bin/bash "${rcmd}" &`)
 			console.log('firefox on Xephyr finished')
 			
 			// let rcmd = `Xephyr -ac -screen ${SCREENSIZE} -br -terminate -reset :2 &`
@@ -238,8 +244,8 @@ DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 95% 95%
 		// while serving X graphics through ssh from host.
 		// Graphics are exactly the host graphics,
 		// digital fingerprint graphic componeents will certainly be the same.
-		syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no`
-			   + ` ubuntu@${contip4} firefox &`)
+		syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+			   + `-i ${sshKeyFilename} ubuntu@${contip4} firefox &`)
 		console.log('Firefox started')		
 	}
 }
@@ -248,23 +254,95 @@ DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 95% 95%
 
 
 function help(){
-	console.log(`usage: 
-  node index.js init [-nufw]
-     -intialiize container
-  node index.js browse [-nxephyr] [-xephyrargs <string>]
-    - restart a stopped container and start browser
-    - NOTE: program will not exit until browser or Xephyr/browser are closed.
-      You may run in background "node iundex.js browse &" to free up terminal.
-  node index.js ufwRule
-    - Show the ufw rule command that would be written - for your information.  
 
-${dropDownFixMsg}
-`)
+
+let usage=`
+================
+Usage:
+
+ - node index.js init [-nufw] [-ntz]
+   Initialize container
+   -nufw: 
+     Don't automatically add ufw rule.
+   -ntz: 
+     Don't use host /etc/timezone in container, the default is UTC.
+
+ - node index.js browse [-nxephyr] [-xephyrargs <string of pass thru args>]
+   Launch Firefox browser
+   -nxephyr: 
+     Don't use Xephyr on container, use host Xserver directly  
+   -xephyrargs <string of pass thru args>]
+     Pass string of args directly to invocation of Xephyr
+
+ - node index.js ufwRule
+   Print out what the ufw rule would be to allow container 'phone home' on init completion.
+
+================
+TL;DR
+ - node index.js init [-nufw]
+   - Intialiizes container. Only required once unless changing parameters.
+     Container automatically runs upon host reboot. View with "lxc list".
+   - "-nufw"
+     use argument "-nufw" to suppress adding the ufw rule.  
+     There is no harm in adding the rule again if it is already present.  
+     Two reasons for not adding the rule - <br/>
+     1.  ufw is not installed on the system <br/>
+     2.  sudo requires a password <br/>
+	 If the rule is not added, the user must ensure that the *phone home* action signaling the containers end of initialization is not blocked by a firewall.
+   - "-ntz"
+     use argument -ntz to prevent host '/etc/timezone' from being copied to container.  
+     This will make UTC the container timezone.
+     
+ - node index.js browse [-nxephyr] [-screen <W>x<H>] [-xephyrargs <string of pass thru args>]
+   - requires 
+     1. That the container be in the running state.
+	 2. That another Xephyr instance is not already running on the container.
+   - "-nxephyr" 
+   Used to run a browser in the container without Xephyr, instead running 
+   directly on the host Xserver via an ssh pipe.  The browsers ip traffic will still be 
+   routed through the VPN, but the host Xserver buffer content might be not as protected from 
+   snooping, and the browser fingerprint will be more similar to that of a browser 
+   running on the host.  Note that even when using Xephyr, Xephyr tranfers some X requests 
+   through the ssh pipe, so some fingerprint similarities may exist anyway.
+   - "-screen <W>x<H>"
+     - default value: "1920x1200"
+	 - specify the Xephyr screensize, e.g. "-screen 1280x800"
+   - "-xephyrargs <pass thru args for Xephyr>"
+     Used to pass a string of arguments to Xephyr.  Run "Xephyr --help" to see what is available.  
+     The arguments
+      "-ac -br -screen <screensize> -resizeable -reset -terminate -zap"
+      are already hard coded   
+
+   - NOTE1: The program will not exit until Xephyr and the browser are closed.
+	 (Or in no-Xephyr mode, until the browser is closed).
+	 You may run in the background with "node index.js browse &" to free up the terminal.
+
+   - NOTE2: Keys to close Firefox '<ctrl>+<shift>+w' 
+
+   - NOTE3: Keys to close Xephyr window '<ctrl>+<alt>+<backspace>' 
+
+   - NOTE4: *Only when using Xephyr* - You may find that when clicking on firefox 
+	 menu icon the menu doesn't drop down correctly.  To fix that try typing 'about:profiles' 
+	 into the address bar, and then clicking on "Restart without addons".  
+	 When Firefox reopens, the menu *might* work.  
+
+   - NOTE5: VPN function can be confirmed by searching for "myip" with the browser
+     The VPN address should appear. 
+
+ - node index.js ufwRule
+   - prints out the 'ufw' rule whill will be automatically added unless 
+     the '-nufw' flag is used with 'init'.  
+     The is helpful for checking address and subnet format and value, 
+     and for adding a rule manually whenn necesary. 
+
+`
+	console.log(usage)
+	
 }
 
 async function main(){
-//	console.log(process.argv.length)
-//	console.log(process.argv)
+	//	console.log(process.argv.length)
+	//	console.log(process.argv)
 	if (process.argv.length < 3)
 		help();
 	else {

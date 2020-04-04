@@ -24,22 +24,6 @@ function syscmd(cmd) {
 }
 
 
-// function getContainerIp4AddressFromListJSON(json,name){
-// 	// var aa = json.find(c=>c.name==name).state.network.eth0.addresses
-// 	// for (a of aa)
-// 	// 	console.log(a)
-// 	return json.find(c=>c.name==name)
-// 		.state.network.eth0.addresses.find(a=>a.family=='inet')
-// 		.address
-// }
-
-//	var contip4 = getContainerIp4AddressFromListJSON(
-//		JSON.parse(syscmd(`lxc list --format json`)), lxcContName
-//	)
-
-
-
-
 function getContainerIp4Address(contName){
 	return JSON.parse(syscmd(`lxc list --format json`))
 		.find(c=>c.name==contName)
@@ -55,7 +39,8 @@ async function createProfile(
 	cloudInitJSON,
 	authorizedPubKeyFilename,
 	phoneHomeURL,
-	overrideFileContent, overrideContFilename
+	overrideFileContent, overrideContFilename,
+	noCopyHostTimezone
 ) {
 
 	// embed ssh public key which will be used to send into the ffvpn container
@@ -76,13 +61,14 @@ async function createProfile(
 		}
 	]
 
-	if (true) {
+	if (!noCopyHostTimezone) {
 		try {
 			let tz = fs.readFileSync(`/etc/timezone`)
 			cloudInitJSON.timezone = tz
 			console.log("read host /etc/timezone to override container timezone")
 		} catch(e) {
-			console.log("couldn't read host /etc/timezone to override container timezone")
+			console.log(
+				"WARNING: failed to  read host /etc/timezone to override container timezone")
 		}
 	}
 
