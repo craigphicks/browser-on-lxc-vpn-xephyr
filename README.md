@@ -49,12 +49,12 @@ sudo ufw allow from <a.b.c.d>/<n> to <a.b.c.d> port 3000 proto tcp
 
 # Usage
 
-## Breif
-
  - `node index.js init [-nufw] [-ntz]`<br/>
    Initialize container
    - `-nufw` 
-     Don't automatically add ufw rule.
+     Don't automatically add ufw rule.  
+	 Use when ufw is not the host firewall, or when sudo requires a password. 
+	 
    - `-ntz` 
      Don't use host /etc/timezone in container, the default is UTC.
 
@@ -70,48 +70,6 @@ sudo ufw allow from <a.b.c.d>/<n> to <a.b.c.d> port 3000 proto tcp
  - `node index.js ufwRule`<br/>
    Print out what the ufw rule would be to allow container to 'phone home' on init completion.
 
-## TL;DR
-
- - `node index.js init [-nufw] [-ntz]`
-   - Intialiizes container. Only required once unless changing parameters.
-   Container automatically runs upon host reboot. View with `lxc list`.
-   - `-nufw`<br/>
-   Don't automatically add the `ufw` rule.<br/> 
-   There is no harm in adding the rule again if it is already present.<br/>
-   Two reasons for not adding the rule - <br/>
-     1.  `ufw` is not installed on the system <br/>
-     2.  `sudo` requires a password <br/>
-	 If the rule is not added, the user must ensure that the *phone home* action signaling the containers end of initialization is not blocked by a firewall.
-   -  `-ntz`<br/> 
-   prevent host `/etc/timezone` from being copied to container.
-   *UTC* will be the container timezone.
-     
- - `node index.js browse [-nxephyr] [-screen <W>x<H>] [-xephyrargs <string of pass thru args>]`
-   - requires <br/>
-     1. That the container be in the running state. <br/>
-	 2. That another Xephyr instance is not already running on the container.
-   - `-nxephyr` 
-     - Used to run a browser in the container without `Xephyr`, instead running 
-   directly on the host Xserver via an ssh pipe.  The browsers ip traffic will still be 
-   routed through the VPN, but the host Xserver buffer content might be not as protected from 
-   snooping, and the browser fingerprint will be more similar to that of a browser 
-   running on the host.  Note that even when using `Xephyr`, `Xephyr` tranfers some X requests 
-   through the ssh pipe, so some fingerprint similarities may exist anyway.
-   - `-screen <W>x<H>`
-     - default value: `1920x1200`
-	 - specify the Xephyr screensize, e.g. `-screen 1280x800`
-   - `-xephyrargs` 
-     - Used to pass a string of arguments to `Xephyr`.  Run `Xephyr --help` to see what is available.  The arguments <br/>
-   `-ac -br -screen <screensize> -resizeable -reset -terminate -zap`<br/>
-   are already hard coded.
-   - NOTE1: The program will not exit until Xephyr and the browser are closed.
-      (Or in no-Xephyr mode, until the browser is closed).
-      You may run in the background with "node index.js browse &" to free up the terminal.
-   - NOTE2: *Only when using Xephyr* - You may find that when clicking on firefox menu icon the menu doesn't drop down correctly.  To fix that try typing 'about:profiles' into the address bar, and then clicking on "Restart without addons".  When Firefox reopens, the menu *might* work.  Otherwise, `<ctrl>+<shift>+w` will close firefox, and the setting page can be accessed with `about:preferences`.
-   - NOTE3: VPN function can be confirmed by searching for `myip` with the browser- the VPN address should appear. 
-
- - `node index.js ufwRule`
-   - prints out the `ufw` rule whill will be automatically added unless the `-nufw` flag is used with `init`.  The is helpful for checking address and subnet format and value, and for adding a rule manually whenn necesary. 
       
 # Other Parameters
 
@@ -121,14 +79,18 @@ Most likely there is no need to change these.
 
 # Setting up VPN on a VPS
 
+This is a quick and dirty way to set up a VPN server on a VPS.
+
  - *Linode* currently offers a *nanode* vanilla VPS for $5 a month at an hourly rate.
  The hourly rate means saving money by deleting and the recreating if it is not going to be used
  for some time.
  - Linenode allows specifying root password and ssh public key to go in `authorized_keys`
- - Set up a firewall on the VPS:
-   - `ufw allow from <a.b.0.0>/24> to any port 22` to enable ssh access, where `a.b` are the first two parts of your host public ip4 address.  That is because your provider might change your ip4 address regularly, but probably keeps the `a.b` part.  If not then just <br/>
-   `ufw allow 22`
-   - `ufw enable` to enable the firewall.
+ - Set up firewall rules on the VPS:<br\>
+   `ufw allow 22`<br\>
+   `ufw allow 1194`
+ - If using port 443 instead of 1194 as the VPN post then write 443 instead of 1194.
+ - Enable the firewall<br/>
+   `ufw enable`
  - Browser search for *"github road warrior"* for instuctions on the one liner for 
  an intereactive install. It is
    - `wget https://git.io/vpn -O openvpn-install.sh && bash openvpn-install.sh`
@@ -138,14 +100,43 @@ Most likely there is no need to change these.
  `scp root@<vps address>:/home/root/ffvpn-client.ovpn ~/`<br/>
  to copy the certificate to the necessary local host location.
  
-You might worry about running as root, but if you used a decent password the biggest risk is getting locked out from `ssh`'ing in as `ufw` when an attacker on the same `a.b` subnet triggers `ssh` lockout. Since you really don't need to log back into the VPS after setup, that might not even be an issue.
+# TL;DR
+
+- Re: `init`
+
+  1, Container only needs to be initialized once.  It will automatically reboot.
+
+  1. Two reasons for not adding the ufw rule - <br/>
+     1.  `ufw` is not installed on the system <br/>
+     2.  `sudo` requires a password <br/>
+	 If the rule is not added, the user must ensure that the *phone home* action signaling the containers end of initialization is not blocked by a firewall.
+
+
+- Re: `browse`
+
+  1. `browse requires <br/>
+     1. That the container be in the running state. <br/>
+	 2. That another Xephyr instance is not already running on the container.
+
+  1. Xeprhyr acts a thin Xserver, but Xephyr sends some X requests in the reverse direction over ssh  to the host X server.
+  1. Running without Xephyr causes all X requests to be sent in the reverse direction over ssh directly to the host X server. 
+
+  1. When using the `-xephyrargs <xephyr args string>` option the following values for `<xephyr args string>` may be of interest:
+    - `-reset -terminate` as a pair will cause Xephyr to terminate when firefox is shutdown.  However, that means a Firefox restart will cause Xephyr to shutdown.
+    - `-fullscreen` will cause Xephyr to use the whole screen.  However, that means the Xephyr close 'x' icon will not be visible.
+	
+  1.  The program will not exit until Xephyr and the browser are closed.
+      (Or in no-Xephyr mode, until the browser is closed).
+      You may run in the background with "node index.js browse &" to free up the terminal.
+  1.  *Only when using Xephyr* - You may find that when clicking on firefox menu icon the menu doesn't drop down correctly.  To fix that try typing 'about:profiles' into the address bar, and then clicking on "Restart without addons".  When Firefox reopens, the menu *might* work.  Otherwise, `<ctrl>+<shift>+w` will close firefox, and the setting page can be accessed with `about:preferences`.
+  1.  VPN function can be confirmed by searching for `myip` with the browser- the VPN address should appear. 
 
 
 # Todo
 
-- Publish on NPM.
 - Figure out how to add audio over reverse ssh (presently audio not enabled).
   C.f. https://superuser.com/a/311830
+- Publish on NPM.
 - Add test suite (even though its a tiny project)
 - Clean up.
 - Allow multi browser types
