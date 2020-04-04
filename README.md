@@ -69,29 +69,25 @@ where `<a.b.c.d>/<n>`is an ip4 network range in CIDR format, e.g.
 - Re: `init`
  1. Container only needs to be initialized once.  It will automatically reboot.
  1. Two reasons for not adding the ufw rule - <br/>
-  1.  `ufw` is not installed on the system <br/>
-  1.  `sudo` requires a password <br/>
+   a.  `ufw` is not installed on the system <br/>
+   a.  `sudo` requires a password <br/>
 	 If the rule is not added, the user must ensure that the *phone home* action signaling the containers end of initialization is not blocked by a firewall.
 
 
 - Re: `browse`
-
-  1. `browse requires <br/>
-     1. That the container be in the running state. <br/>
-	 2. That another Xephyr instance is not already running on the container.
-
-  1. Xeprhyr acts a thin Xserver, but Xephyr sends some X requests in the reverse direction over ssh  to the host X server.
-  1. Running without Xephyr causes all X requests to be sent in the reverse direction over ssh directly to the host X server. 
-
-  1. When using the `-xephyrargs <xephyr args string>` option the following values for `<xephyr args string>` may be of interest:
+ 1. `browse` requires <br/>
+   1. That the container be in the running state. <br/>
+   2. That another Xephyr instance is not already running on the container.
+ 1. Xeprhyr acts a thin Xserver, but Xephyr sends some X requests in the reverse direction over ssh  to the host X server.
+ 1. Running without Xephyr causes all X requests to be sent in the reverse direction over ssh directly to the host X server. 
+ 1. When using the `-xephyrargs <xephyr args string>` option the following values for `<xephyr args string>` may be of interest:
     - `-reset -terminate` as a pair will cause Xephyr to terminate when firefox is shutdown.  However, that means a Firefox restart will cause Xephyr to shutdown.
     - `-fullscreen` will cause Xephyr to use the whole screen.  However, that means the Xephyr close 'x' icon will not be visible.
-	
-  1.  The program will not exit until Xephyr and the browser are closed.
+ 1.  The program will not exit until Xephyr and the browser are closed.
       (Or in no-Xephyr mode, until the browser is closed).
       You may run in the background with "node index.js browse &" to free up the terminal.
-  1.  *Only when using Xephyr* - You may find that when clicking on firefox menu icon the menu doesn't drop down correctly.  To fix that try typing 'about:profiles' into the address bar, and then clicking on "Restart without addons".  When Firefox reopens, the menu *might* work.  Otherwise, `<ctrl>+<shift>+w` will close firefox, and the setting page can be accessed with `about:preferences`.
-  1.  VPN function can be confirmed by searching for `myip` with the browser- the VPN address should appear. 
+ 1.  *Only when using Xephyr* - You may find that when clicking on firefox menu icon the menu doesn't drop down correctly.  To fix that try typing 'about:profiles' into the address bar, and then clicking on "Restart without addons".  When Firefox reopens, the menu *might* work.  Otherwise, `<ctrl>+<shift>+w` will close firefox, and the setting page can be accessed with `about:preferences`.
+ 1.  VPN function can be confirmed by searching for `myip` with the browser- the VPN address should appear. 
 
 
 
