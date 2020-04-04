@@ -24,12 +24,7 @@ const lxcCopyProfileName = 'default'
 const lxcProfileName = 'ffvpn-prof'
 const lxcContBridgeName = 'lxdbr0'
 const phoneHomePort = 3000
-//const vpnClientKeySrcFilename = `/tmp/client.ovpn`
 const contUsername = 'ubunutu'
-//const SCREENSIZE = '1280x800'
-//const SCREENSIZE = '1920x1200'
-//const SCREENSIZE = '2020x1300'
-
 // end of Parameters
 //////////////////////////////////////////
 
@@ -202,9 +197,12 @@ async function browse(args) {
 		xephyrPassThruArgs = args[args.indexOf('-xephyrargs')+1]
 	}
 
-	let SCREENSIZE = '1920x1200';
-	if (args.indexOf('-screen')>=0){
+	let SCREENSIZE = 
+		syscmd(`xdpyinfo | grep dimensions`).split(' ').find(w=>w.match(/^[\d]+x[\d]+$/));
+	if (args.indexOf('-screen')>=0){	
 		SCREENSIZE = args[args.indexOf('-screen')+1]
+	} else {
+		console.log(`detected host screensize of ${SCREENSIZE}`)
 	}
 
 	const setTimeoutPromise = util.promisify(setTimeout);
@@ -219,11 +217,12 @@ XServerXephyr_manual==false
 XServerXephyr_host0_cont1==0`); 
 		} else { // XServerXephyr_host0_cont1==1
 			let rcmd = `
-Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -reset -terminate -zap ${xephyrPassThruArgs} :2 &
+#Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -reset -terminate -zap ${xephyrPassThruArgs} :2 &
+Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -zap ${xephyrPassThruArgs} :2 &
 sleep 1
 DISPLAY=:2 firefox &
 sleep 3
-DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 95% 95%
+DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 100% 100%
 `
 			
 			console.log('starting firefox on Xephyr')
