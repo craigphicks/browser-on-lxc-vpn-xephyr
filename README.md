@@ -69,15 +69,15 @@ where `<a.b.c.d>/<n>`is an ip4 network range in CIDR format, e.g.
 - Re: `init`
  1. Container only needs to be initialized once.  It will automatically reboot.
  1. Two reasons for not adding the ufw rule - <br/>
-   a.  `ufw` is not installed on the system <br/>
-   a.  `sudo` requires a password <br/>
+   a)  `ufw` is not installed on the system <br/>
+   b)  `sudo` requires a password <br/>
 	 If the rule is not added, the user must ensure that the *phone home* action signaling the containers end of initialization is not blocked by a firewall.
 
 
 - Re: `browse`
  1. `browse` requires <br/>
-   1. That the container be in the running state. <br/>
-   2. That another Xephyr instance is not already running on the container.
+   a) That the container be in the running state. <br/>
+   b) That another Xephyr instance is not already running on the container.
  1. Xeprhyr acts a thin Xserver, but Xephyr sends some X requests in the reverse direction over ssh  to the host X server.
  1. Running without Xephyr causes all X requests to be sent in the reverse direction over ssh directly to the host X server. 
  1. When using the `-xephyrargs <xephyr args string>` option the following values for `<xephyr args string>` may be of interest:
