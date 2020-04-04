@@ -104,8 +104,8 @@ This is a quick and dirty way to set up a VPN server on a VPS.
  - *Linode* currently offers a *nanode* vanilla VPS for $5 a month at an hourly rate.
  The hourly rate means saving money by deleting and the recreating if it is not going to be used
  for some time.
- - Linenode allows specifying root password and ssh public key to go in `authorized_keys`
- - Set up firewall rules on the VPS:<br/>
+ - Linenode allows specifying root password and ssh public key to go in `authorized_keys`before creating the node.
+ - Once the node is created, set up firewall rules on the VPS:<br/>
    `ufw allow 22`<br/>
    `ufw allow 1194`
  - If using port 443 instead of 1194 as the VPN post then write 443 instead of 1194.
@@ -130,6 +130,5 @@ This is a quick and dirty way to set up a VPN server on a VPS.
 - Add test suite (even though its a tiny project)
 - Clean up.
 - Allow multi browser types
-- Allow multiple browser instances each with own Xephyr to be run simultaneously 
 - Perhaps enable remote containers - 
 although piping X a long distance might be rather slow - so not worth it?
