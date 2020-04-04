@@ -105,8 +105,8 @@ This is a quick and dirty way to set up a VPN server on a VPS.
  The hourly rate means saving money by deleting and the recreating if it is not going to be used
  for some time.
  - Linenode allows specifying root password and ssh public key to go in `authorized_keys`
- - Set up firewall rules on the VPS:<br\>
-   `ufw allow 22`<br\>
+ - Set up firewall rules on the VPS:<br/>
+   `ufw allow 22`<br/>
    `ufw allow 1194`
  - If using port 443 instead of 1194 as the VPN post then write 443 instead of 1194.
  - Enable the firewall<br/>
