@@ -67,12 +67,10 @@ where `<a.b.c.d>/<n>`is an ip4 network range in CIDR format, e.g.
 # TL;DR notes on usage
 
 - Re: `init`
-
-  1. Container only needs to be initialized once.  It will automatically reboot.
-
-  1. Two reasons for not adding the ufw rule - <br/>
-     1.  `ufw` is not installed on the system <br/>
-     2.  `sudo` requires a password <br/>
+ 1. Container only needs to be initialized once.  It will automatically reboot.
+ 1. Two reasons for not adding the ufw rule - <br/>
+  1.  `ufw` is not installed on the system <br/>
+  1.  `sudo` requires a password <br/>
 	 If the rule is not added, the user must ensure that the *phone home* action signaling the containers end of initialization is not blocked by a firewall.
 
 
