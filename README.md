@@ -121,16 +121,17 @@ This is a quick and dirty way to set up a VPN server on a VPS.
  to copy the certificate to the necessary local host location.
  
 
+# References used in enabling pulse audio over ssh
+
+https://superuser.com/a/311830, https://askubuntu.com/a/857458,
+https://lists.linuxcontainers.org/pipermail/lxc-users/2016-January/010802.html, https://www.systutorials.com/docs/linux/man/5-pulse-daemon.conf/,
+https://askubuntu.com/questions/70556/how-do-i-forward-sound-from-one-computer-to-another-over-the-lan
+
+In the end most if wasn't neccesary. 
 
 # Todo
 
-- Figure out how to add audio over reverse ssh (presently audio not enabled).
-  C.f. https://superuser.com/a/311830, https://askubuntu.com/a/857458,
-  especially lxc specific https://lists.linuxcontainers.org/pipermail/lxc-users/2016-January/010802.html, https://www.systutorials.com/docs/linux/man/5-pulse-daemon.conf/,
-https://askubuntu.com/questions/70556/how-do-i-forward-sound-from-one-computer-to-another-over-the-lan
 - Publish on NPM.
-- Add test suite (even though its a tiny project)
+- Add test suite.
 - Clean up.
-- Allow multi browser types
-- Perhaps enable remote containers - 
-although piping X a long distance might be rather slow - so not worth it?
+- Other browser types
