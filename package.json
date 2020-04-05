@@ -1,7 +1,7 @@
 {
   "name": "browser-on-lxc-vpn-xephyr",
   "version": "1.2.0",
-  "description": "js script to set up lxc container with firefox, openvpn, and xephyr on Ubuntu",
+  "description": "js script to create lxc container with firefox, openvpn, and xephyr on Ubuntu",
   "main": "ffvpn-prof.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

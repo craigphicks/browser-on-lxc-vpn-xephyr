@@ -1,3 +1,0 @@
-Host 10.64.64.62
-    User ubuntu
-	IdentityFile ~/.ssh/to-ffvpn
