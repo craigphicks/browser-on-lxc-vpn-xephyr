@@ -28,11 +28,6 @@ const contUsername = 'ubunutu'
 // end of Parameters
 //////////////////////////////////////////
 
-////////////
-// Currently the following two values may not be changed:
-const XServerXephyr_host0_cont1 = 1
-const XServerXephyr_manual = false
-////////////
 
 const dropDownFixMsg = 
 	  `#### NOTE! ####
@@ -42,27 +37,19 @@ To fix that try typing 'about:profiles' into the address bar, and then clicking 
 `
 
 
-// package_upgrade: true, ssha_authorized_keys: ...
+// package_upgrade: true, ssha_authorized_keys, timezone
 // will be added internally
 var cloudInitJSON = {
 	//	"locale": "en_US.UTF-8", 
 	"locale": process.env.LANG, 
-//	"timezone": timezone, 
 	"packages": [
 	 	"firefox", 
 	 	"openvpn",
 		"xdotool", // necessary only when XServerXephyr will be 'true' at browse time. 
 		"xserver-xephyr",
 		 "pulseaudio",
-		// "pulseaudio-utils",
-		// "x11-utils"
 	],
-	//groups: "pulse, pulse-access", // c.f. https://lists.linuxcontainers.org/pipermail/lxc-users/2016-January/010802.html
 	"runcmd": [
-//		[
-//			"touch", 
-//			"/home/ubuntu/iwozere"
-//		]
 	]
 }
 
@@ -117,12 +104,7 @@ async function initialize(args) {
 
 	console.log("KEY done ...")
 
-	// determine cloud init phone_home post destination and ufw rule to allow it
-	// (depends on bridge ${lxcContBridgeName})
-	//console.log(yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)))
-
 	networkInfo = getNetworkInfo();
-
 
 	// the file containing the fix for openvpn-client to run in, and where it should go
 	let overrideContFn = `/etc/systemd/system/openvpn-client\@.service.d/override.conf`
@@ -177,12 +159,7 @@ async function initialize(args) {
 	syscmd(`lxc file push  ${vpnClientCertFilename} ` + 
 		   `${lxcContName}/etc/openvpn/client/client.conf --gid 0 --uid 0`)
 
-	//syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`)
-
 	console.log(syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`))
-	//console.log('STATUS of openvpn-client on CONTAINER:\n',
-	//			syscmd(`lxc exec ${lxcContName} -- systemctl status openvpn-client@client`))
-
 }
 
 async function browse(args) {
@@ -209,36 +186,25 @@ async function browse(args) {
 	var contip4 = getContainerIp4Address(lxcContName)
 	if (XServerXephyr) {
 		console.log(dropDownFixMsg)
-		if (XServerXephyr_host0_cont1==0) {
-			throw Error(
-				`this combination of settings not currently implemented:
-XServerXephyr==true  
-XServerXephyr_manual==false  
-XServerXephyr_host0_cont1==0`); 
-		} else { // XServerXephyr_host0_cont1==1
-			let rcmd = `
-#Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -reset -terminate -zap ${xephyrPassThruArgs} :2 &
+		let rcmd = `
 Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -zap ${xephyrPassThruArgs} :2 &
 sleep 1
 DISPLAY=:2 PULSE_SERVER=tcp:localhost:44713 firefox &
 sleep 3
 DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 100% 100%
 `			
-			console.log('starting firefox on Xephyr')
-			syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
-				   + `-R 44713:localhost:4713 `
-				   + `-i ${sshKeyFilename}  ubuntu@${contip4} /bin/bash "${rcmd}" &`)
-			console.log('firefox on Xephyr finished')
-			
-		}
-	} else {  // XServerXephyr == false 
-		// from host ssh execute browser in linux container 
-		// while serving X graphics through ssh from host.
-		// Graphics are exactly the host graphics,
-		// digital fingerprint graphic componeents will certainly be the same.
+		console.log('starting firefox on Xephyr')
 		syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
-			   + `-i ${sshKeyFilename} ubuntu@${contip4} firefox &`)
-		console.log('Firefox started')		
+			   + `-R 44713:localhost:4713 `
+			   + `-i ${sshKeyFilename}  ubuntu@${contip4} /bin/bash "${rcmd}" &`)
+		console.log('firefox on Xephyr finished')
+		
+	} else {  // XServerXephyr == false 
+		syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+			   + `-R 44713:localhost:4713 `
+			   + `-i ${sshKeyFilename} ubuntu@${contip4} `
+			   +  `PULSE_SERVER=tcp:localhost:44713 firefox &`)
+		console.log('Firefox started (no Xephyr)')		
 	}
 }
 
@@ -256,20 +222,8 @@ function configPulseAudioOnHost() {
 	;
 	fs.mkdirSync(`/home/${process.env.USER}/.config/pulse`, { recursive: true });
 	fs.writeFileSync( `/home/${process.env.USER}/.config/pulse/default.pa`, defPa)
+	// kill pulseaudio, it will load the new config and self reboot
 	syscmd(`pulseaudio --kill`)
-	
-
-	
-	// let cmd;
-	// cmd = `lxc file push -p --uid 1000 --gid 1000 --mode 0600 `
-	// 	+ `~/.config/pulse/cookie ${lxcContName}/home/ubuntu/.config/pulse/cookie`
-	// console.log(cmd)
-	// console.log(syscmd(cmd))
-	
-	
-	
-	//console.log(syscmd("pacmd list modules"))
-
 }
 
 
@@ -281,7 +235,7 @@ let usage=`
 Usage:
 
  - node index.js init [-nufw] [-ntz] [-screen]
-   Initialize container
+   Initialize container.  When done, browser will appear automatically, with Xephyr.
    -nufw: 
      Don't automatically add ufw rule required for container init-completion phone-home signal.
      Use when ufw is not the host firewall, or when sudo requires a password. 

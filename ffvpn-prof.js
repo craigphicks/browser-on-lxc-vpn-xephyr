@@ -59,17 +59,8 @@ async function createProfile(
 			"path":overrideContFilename,
 			"permissions":'0644'
 		}
-		// ,{  // for audio
-		// 	"content": `PULSE_SERVER=${networkInfo.toAddr}\n`,
-		// 	"path":"/etc/environment",
-		// 	"permissions":'0644',
-		// 	"append":true
-		// }
 	]
 	
-//	cloudInitJSON.runcmd = cloudInitJSON.runcmd.append([
-//	]);
-
 	if (!noCopyHostTimezone) {
 		try {
 			let tz = fs.readFileSync(`/etc/timezone`,'utf8')
@@ -110,10 +101,7 @@ async function createProfile(
 
 	prof_ffvpn_json.description = "profile for ffvpn project"
 
-	//console.log("after assignment of cloud init data\n", JSON.stringify(prof_ffvpn_json))
-
 	// now we write it back out as a new lxc profile using the lxc edit call
-
 	await new Promise((resolve, reject)=>{
 		
 		var proc = exec('lxc profile edit ' + profileName, (error, stdout, stderr) => {
