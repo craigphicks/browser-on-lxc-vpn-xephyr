@@ -38,7 +38,7 @@ async function createProfile(
 	profileName,
 	cloudInitJSON,
 	authorizedPubKeyFilename,
-	phoneHomeURL,
+	networkInfo, phoneHomePort,
 	overrideFileContent, overrideContFilename,
 	noCopyHostTimezone
 ) {
@@ -49,23 +49,33 @@ async function createProfile(
 	]
 	cloudInitJSON.package_upgrade = true
 	cloudInitJSON.phone_home = {
-	 	"url": phoneHomeURL,
+	 	"url": `http://${networkInfo.toAddr}:${phoneHomePort}`,
 	 	"post": "all",
 	 	"tries": 10
 	}
 	cloudInitJSON.write_files = [
-		{
+		{ // for lxd - openvpn compatibility bug fix
 			"content": overrideFileContent,
 			"path":overrideContFilename,
 			"permissions":'0644'
 		}
+		// ,{  // for audio
+		// 	"content": `PULSE_SERVER=${networkInfo.toAddr}\n`,
+		// 	"path":"/etc/environment",
+		// 	"permissions":'0644',
+		// 	"append":true
+		// }
 	]
+	
+//	cloudInitJSON.runcmd = cloudInitJSON.runcmd.append([
+//	]);
 
 	if (!noCopyHostTimezone) {
 		try {
-			let tz = fs.readFileSync(`/etc/timezone`)
-			cloudInitJSON.timezone = tz
-			console.log("read host /etc/timezone to override container timezone")
+			let tz = fs.readFileSync(`/etc/timezone`,'utf8')
+			cloudInitJSON.timezone = tz.slice(0,-1);
+			console.log(`read host /etc/timezone to set container timezone `
+						+ `= ${cloudInitJSON.timezone}`)
 		} catch(e) {
 			console.log(
 				"WARNING: failed to  read host /etc/timezone to override container timezone")

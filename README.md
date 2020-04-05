@@ -57,7 +57,7 @@ where `<a.b.c.d>/<n>`is an ip4 network range in CIDR format, e.g.
    - `-nxephyr`<br/>
      Don't use Xephyr on container, use host Xserver directly
    - `screen <W>x<H>`<br/>
-       Initial size of Xephyr screen. Default is `1920x1200`.
+       Initial size of Xephyr screen. Default is taken from host screen size.
    - `-xephyrargs <string of pass thru args>`<br/>
      Pass addition args directly to invocation of Xephyr
 
@@ -125,7 +125,9 @@ This is a quick and dirty way to set up a VPN server on a VPS.
 # Todo
 
 - Figure out how to add audio over reverse ssh (presently audio not enabled).
-  C.f. https://superuser.com/a/311830
+  C.f. https://superuser.com/a/311830, https://askubuntu.com/a/857458,
+  especially lxc specific https://lists.linuxcontainers.org/pipermail/lxc-users/2016-January/010802.html, https://www.systutorials.com/docs/linux/man/5-pulse-daemon.conf/,
+https://askubuntu.com/questions/70556/how-do-i-forward-sound-from-one-computer-to-another-over-the-lan
 - Publish on NPM.
 - Add test suite (even though its a tiny project)
 - Clean up.

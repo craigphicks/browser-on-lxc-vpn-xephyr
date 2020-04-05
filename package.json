@@ -10,5 +10,13 @@
   "license": "ISC",
   "dependencies": {
     "js-yaml": "^3.13.1"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/craigphicks/browser-on-lxc-vpn-xephyr.git"
+  },
+  "bugs": {
+    "url": "https://github.com/craigphicks/browser-on-lxc-vpn-xephyr/issues"
+  },
+  "homepage": "https://github.com/craigphicks/browser-on-lxc-vpn-xephyr#readme"
 }

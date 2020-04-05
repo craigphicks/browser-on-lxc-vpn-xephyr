@@ -47,36 +47,38 @@ To fix that try typing 'about:profiles' into the address bar, and then clicking 
 var cloudInitJSON = {
 	//	"locale": "en_US.UTF-8", 
 	"locale": process.env.LANG, 
-	"timezone": timezone, 
+//	"timezone": timezone, 
 	"packages": [
 	 	"firefox", 
 	 	"openvpn",
 		"xdotool", // necessary only when XServerXephyr will be 'true' at browse time. 
-		"xserver-xephyr"
-	], 
+		"xserver-xephyr",
+		 "pulseaudio",
+		// "pulseaudio-utils",
+		// "x11-utils"
+	],
+	//groups: "pulse, pulse-access", // c.f. https://lists.linuxcontainers.org/pipermail/lxc-users/2016-January/010802.html
 	"runcmd": [
-		[
-			"touch", 
-			"/home/ubuntu/iwozere"
-		]
+//		[
+//			"touch", 
+//			"/home/ubuntu/iwozere"
+//		]
 	]
 }
 
-function getPhoneHomeInfo(){
-	let phoneHomeFromCDN = yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)).
+function getNetworkInfo(){
+	let networkFromCDN = yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)).
 		config['ipv4.address']
-	let phoneHomeToAddr = phoneHomeFromCDN.split('/')[0]
-	let phoneHomeURL = `http://${phoneHomeToAddr}:${phoneHomePort}`
+	let networkToAddr = networkFromCDN.split('/')[0]
 	return {
-		fromCDN:phoneHomeFromCDN,
-		toAddr:phoneHomeToAddr,
-		URL:phoneHomeURL
+		fromCDN:networkFromCDN,
+		toAddr:networkToAddr
 	}
 }
 
-function makeUfwRule(phoneHomeInfo){
+function makeUfwRule(networkInfo){
 	let ret = 
-		`sudo ufw allow from ${phoneHomeInfo.fromCDN} to ${phoneHomeInfo.toAddr} ` 
+		`sudo ufw allow from ${networkInfo.fromCDN} to ${networkInfo.toAddr} ` 
 		+ `port ${phoneHomePort} proto tcp`;
 	return ret
 }
@@ -92,6 +94,7 @@ async function initialize(args) {
 	let noCopyHostTimezone = false;
 	if (args.indexOf('-ntz')>=0)
 		noCopyHostTimezone = false;
+
 
 	// if name exists delete it
 	let clist = JSON.parse(syscmd(`lxc list --format json`))
@@ -118,11 +121,8 @@ async function initialize(args) {
 	// (depends on bridge ${lxcContBridgeName})
 	//console.log(yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)))
 
-	phoneHomeInfo = getPhoneHomeInfo();
-	// let phoneHomeFromCDN = yaml.safeLoad(syscmd(`lxc network show ${lxcContBridgeName}`)).
-	// 	config['ipv4.address']
-	// let phoneHomeToAddr = phoneHomeFromCDN.split('/')[0]
-	// let phoneHomeURL = `http://${phoneHomeToAddr}:${phoneHomePort}`
+	networkInfo = getNetworkInfo();
+
 
 	// the file containing the fix for openvpn-client to run in, and where it should go
 	let overrideContFn = `/etc/systemd/system/openvpn-client\@.service.d/override.conf`
@@ -133,7 +133,7 @@ async function initialize(args) {
 		lxcProfileName,
 		cloudInitJSON,
 		`${sshKeyFilename}.pub`,
-		phoneHomeInfo.URL,
+		networkInfo, phoneHomePort,
 		'[Service]\nLimitNPROC=infinity\n',
 		overrideContFn,
 		noCopyHostTimezone
@@ -149,16 +149,14 @@ async function initialize(args) {
 
 	if (doUfwRule){
 		//console.log(phoneHomeInfo)
-		console.log('DEBUG: ',makeUfwRule(phoneHomeInfo))
-		let ufwRuleCmd = makeUfwRule(phoneHomeInfo)
-		// `sudo ufw allow from ${phoneHomeInfo.fromCDN} to ${phoneHomeInfo.toAddr} ` 
-		// + `port ${phoneHomePort} proto tcp`;
+		//console.log('DEBUG: ',makeUfwRule(networkInfo))
+		let ufwRuleCmd = makeUfwRule(networkInfo)
 		console.log(`ADDING UFW RULE for phome_home:\n${ufwRuleCmd}`)
 		console.log(syscmd(ufwRuleCmd))
 	}
 	
 	// set up receiver for cloud init phone home signalling cloud init end
-	var promPhoneHome = waitPhoneHome(phoneHomeInfo.toAddr, phoneHomePort)
+	var promPhoneHome = waitPhoneHome(networkInfo.toAddr, phoneHomePort)
 
 	// create the container with cloud init customization
 	syscmd(`lxc launch ${lxcImageAlias} ${lxcContName} -p ${lxcProfileName}`)
@@ -196,7 +194,7 @@ async function browse(args) {
 	if (args.indexOf('-xephyrargs')>=0){
 		xephyrPassThruArgs = args[args.indexOf('-xephyrargs')+1]
 	}
-
+	
 	let SCREENSIZE = 
 		syscmd(`xdpyinfo | grep dimensions`).split(' ').find(w=>w.match(/^[\d]+x[\d]+$/));
 	if (args.indexOf('-screen')>=0){	
@@ -205,6 +203,8 @@ async function browse(args) {
 		console.log(`detected host screensize of ${SCREENSIZE}`)
 	}
 
+	configPulseAudioOnHost();
+	
 	const setTimeoutPromise = util.promisify(setTimeout);
 	var contip4 = getContainerIp4Address(lxcContName)
 	if (XServerXephyr) {
@@ -220,23 +220,16 @@ XServerXephyr_host0_cont1==0`);
 #Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -reset -terminate -zap ${xephyrPassThruArgs} :2 &
 Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -zap ${xephyrPassThruArgs} :2 &
 sleep 1
-DISPLAY=:2 firefox &
+DISPLAY=:2 PULSE_SERVER=tcp:localhost:44713 firefox &
 sleep 3
 DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 100% 100%
-`
-			
+`			
 			console.log('starting firefox on Xephyr')
 			syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+				   + `-R 44713:localhost:4713 `
 				   + `-i ${sshKeyFilename}  ubuntu@${contip4} /bin/bash "${rcmd}" &`)
 			console.log('firefox on Xephyr finished')
 			
-			// let rcmd = `Xephyr -ac -screen ${SCREENSIZE} -br -terminate -reset :2 &`
-			// syscmd(`ssh -Y ubuntu@${contip4} "${rcmd}"`);
-			// console.log('Xephyr started')
-
-			// rcmd = "DISPLAY=:2 firefox &"
-			// syscmd(`ssh -Y ubuntu@${contip4} "${rcmd}"`);
-			// console.log('firefox started')
 		}
 	} else {  // XServerXephyr == false 
 		// from host ssh execute browser in linux container 
@@ -249,7 +242,35 @@ DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 100% 100%
 	}
 }
 
+function configPulseAudioOnHost() {
+	//set pulseaudio to accept audio from host
+	let networkInfo = getNetworkInfo()
 
+	// audio on host side
+	// create a new ~/.config/pulse/default.pa file
+	let defPa = fs.readFileSync(`/etc/pulse/default.pa`)
+	defPa = defPa + 
+		`load-module module-native-protocol-tcp `
+		+ `port=4713 auth-ip-acl=127.0.0.1`
+		+ `\n`
+	;
+	fs.mkdirSync(`/home/${process.env.USER}/.config/pulse`, { recursive: true });
+	fs.writeFileSync( `/home/${process.env.USER}/.config/pulse/default.pa`, defPa)
+	syscmd(`pulseaudio --kill`)
+	
+
+	
+	// let cmd;
+	// cmd = `lxc file push -p --uid 1000 --gid 1000 --mode 0600 `
+	// 	+ `~/.config/pulse/cookie ${lxcContName}/home/ubuntu/.config/pulse/cookie`
+	// console.log(cmd)
+	// console.log(syscmd(cmd))
+	
+	
+	
+	//console.log(syscmd("pacmd list modules"))
+
+}
 
 
 function help(){
@@ -259,7 +280,7 @@ let usage=`
 ================
 Usage:
 
- - node index.js init [-nufw] [-ntz]
+ - node index.js init [-nufw] [-ntz] [-screen]
    Initialize container
    -nufw: 
      Don't automatically add ufw rule required for container init-completion phone-home signal.
@@ -273,6 +294,8 @@ Usage:
      Don't use Xephyr on container, use host Xserver directly  
    -xephyrargs <string of pass thru args>]
      Pass string of args directly to invocation of Xephyr
+   -screen <W>x<H>
+       Initial size of Xephyr screen. Default is taken from host screen size.
 
  - node index.js ufwRule
    Print out what the ufw rule would be to allow container 'phone-home' on init-completion.
@@ -298,6 +321,9 @@ async function main(){
 		case 'ufwRule':
 			console.log(makeUfwRule(getPhoneHomeInfo()));
 			break;
+		// case 'test':
+		// 	configPulseAudioOnHost();
+		// 	break;
 		default: help();
 		}
 	}
