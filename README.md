@@ -10,7 +10,9 @@ running firefox, vpn, and the X-server Xephyr.  This setup allows
  - (perhaps some degree of) protection against snooping of Xserver memory
  
 The resulting unprivileged linux container has no access to the host filesystem.
- 
+
+Avaliable on *npm* - https://www.npmjs.com/package/browser-on-lxc-vpn-xephyr
+
 # Requirements
 
 This software was tested on a host running Ubuntu 18.04. 
@@ -131,7 +133,6 @@ In the end most if wasn't neccesary.
 
 # Todo
 
-- Publish on NPM.
 - Add test suite.
 - Clean up.
 - Other browser types
