@@ -66,6 +66,15 @@ where `<a.b.c.d>/<n>`is an ip4 network range in CIDR format, e.g.
  - `node index.js ufwRule`<br/>
    Print out what the ufw rule would be to allow container to 'phone home' on init completion.
 
+ - `node index.js clip-to-cont`<br/>
+   Copy the content of the host clipboard to the container clipboard.
+   It is expected this call would be mapped to a shortcut key.
+
+ - `node index.js clip-from-cont`<br/>
+   Copy the content of the container clipboard to the host clipboard. 
+   It is expected this call would be mapped to a shortcut key.
+
+
 # TL;DR notes on usage
 
 - Re: `init`

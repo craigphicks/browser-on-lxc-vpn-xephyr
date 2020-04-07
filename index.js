@@ -1,4 +1,5 @@
 'strict'
+const { /*execSync,*/ exec } = require('child_process')
 const util = require('util')
 const fs = require('fs')
 const url = require('url')
@@ -47,7 +48,8 @@ var cloudInitJSON = {
 	 	"openvpn",
 		"xdotool", // necessary only when XServerXephyr will be 'true' at browse time. 
 		"xserver-xephyr",
-		 "pulseaudio",
+		"pulseaudio",
+		"xsel"
 	],
 	"runcmd": [
 	]
@@ -227,6 +229,71 @@ function configPulseAudioOnHost() {
 }
 
 
+function notify_send(title, msg){
+	title = title.replace(/"/g, '\\"');
+	msg = msg.replace(/"/g, '\\"');
+	//msg = msg.replace(/'/g, '\\'')
+	syscmd(`notify-send "${title}" "${msg}"`);
+}
+
+async function clipToCont(){
+	var contip4 = getContainerIp4Address(lxcContName)
+	var clipValue
+	try {
+		clipValue = syscmd('xsel --clipboard --output');
+	} catch(e) {
+		throw 'host clipboard empty';
+	}
+	let cmd2 = `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no  ubuntu@${contip4} 'xsel --clipboard --input --display :2'`;
+	await new Promise((resolve, reject)=>{		
+		var proc = exec(cmd2, (error, stdout, stderr) => {
+			if (error) {
+				reject(error);
+			}
+			resolve()
+		});
+		if (!proc.stdin.write(clipValue))
+			reject('pipe write failed')
+		proc.stdin.end()
+	})					 
+}
+
+async function clipFromCont(){
+	var contip4 = getContainerIp4Address(lxcContName)
+	var clipValue
+	let cmd1 = `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no  ubuntu@${contip4} 'xsel --clipboard --output --display :2'`;
+	let cmd2 = `xsel --clipboard --input`;
+	let clipVal = syscmd(cmd1)
+	await new Promise((resolve, reject)=>{
+		var proc = exec(cmd2, (error, stdout, stderr) => {
+			if (error) {
+				reject(error);
+			}
+			resolve()
+		});
+		if (true) {
+			if (!proc.stdin.write(clipVal))
+				reject('pipe write failed')
+			proc.stdin.end()
+		}
+	})	
+}
+
+async function clipNotify(to0from1){
+	let f = to0from1 ? clipFromCont : clipToCont;
+	let n = to0from1 ? "clipFromCont" : "clipToCont";
+	let err;
+	await f()
+		.then(()=>{
+			notify_send(n + ": SUCCESS", "")
+		})
+		.catch((e)=>{
+			notify_send(n +  ": FAIL", e.toString())
+			err=e
+		})
+	if (err) throw err;
+}			  
+
 function help(){
 
 
@@ -254,10 +321,18 @@ Usage:
  - node index.js ufwRule
    Print out what the ufw rule would be to allow container 'phone-home' on init-completion.
 
+ - node index.js clip-to-cont
+   Copy the content of the host clipboard to the container clipboard.
+   It is expected this call would be mapped to a shortcut key.
+
+ - node index.js clip-from-cont
+   Copy the content of the container clipboard to the host clipboard. 
+   It is expected this call would be mapped to a shortcut key.
 `
 	console.log(usage)
 	
 }
+
 
 async function main(){
 	//	console.log(process.argv.length)
@@ -273,11 +348,17 @@ async function main(){
 			await browse(process.argv.slice(3));
 			break;
 		case 'ufwRule':
-			console.log(makeUfwRule(getPhoneHomeInfo()));
+			console.log(makeUfwRule(getNetworkInfo()));
 			break;
-		// case 'test':
-		// 	configPulseAudioOnHost();
-		// 	break;
+			// case 'test':
+			// 	configPulseAudioOnHost();
+			// 	break;
+		case 'clip-to-cont':
+			await clipNotify(0);
+			break;
+		case 'clip-from-cont':
+			await clipNotify(1);
+			break;
 		default: help();
 		}
 	}
