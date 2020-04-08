@@ -189,7 +189,7 @@ async function browse(args) {
 	const setTimeoutPromise = util.promisify(setTimeout);
 	var contip4 = getContainerIp4Address(lxcContName)
 	if (XServerXephyr) {
-//		console.log(dropDownFixMsg)
+		console.log(dropDownFixMsg)
 		let rcmd = `
 Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -zap ${xephyrPassThruArgs} :2 &
 sleep 1
