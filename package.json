@@ -1,6 +1,6 @@
 {
 	"name": "browser-on-lxc-vpn-xephyr",
-	"version": "1.3.0",
+	"version": "1.4.0",
 	"description": "js script to create lxc container with firefox, openvpn, and xephyr on Ubuntu",
     "keywords": [
 		"browser", "firefox",

@@ -142,6 +142,3 @@ In the end most if wasn't neccesary.
 
 # Todo
 
-- Add test suite.
-- Clean up.
-- Other browser types
