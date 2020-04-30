@@ -9,9 +9,33 @@ running firefox, vpn, and the X-server Xephyr.  This setup allows
  - (perhaps some degree of) fingerprint-anonymous browsing 
  - (perhaps some degree of) protection against snooping of Xserver memory
  
+Audio and clipboard(*) are enabled.  (Functions are provided to transfer between host and container clipboards, 
+it does not happen automatically as that would be a security risk.)  Those can be mapped to keyboard shortcuts.
+
+Openbox window manager is used on the container.
+ 
 The resulting unprivileged linux container has no access to the host filesystem.
 
 Avaliable on *npm* - https://www.npmjs.com/package/browser-on-lxc-vpn-xephyr
+
+# Motivation: Experiement to measure fingerprint association power
+
+This was conducted as an experiment to test the efficiacy fingerprint tracking,
+and see if running a browser with a different GL signature through a different IP
+would prevent fingerprint identification.
+
+The conclusion is that it does not prevent.  As the browser was being run without 
+ad blockers, ads soon appeared.  The first was an advert for UV LED lights, 
+a very obscure item that I had searching for on my normal browser a couple of weeks before.
+
+Among other possibilities, my identity would be known to Linode (the VPS provider)
+as they have my payment information.  That could be part of the fingerprint.
+
+Another possibility is that the container browser fingerprint was was recorded when 
+I used it for a very brief moment without VPN to check local IP address (googling "my ip").
+
+In conclusion, the efficacy of tracking is probably near perfect, with every possible data source
+utilized to automatically update advertising databases in real time.
 
 # Requirements
 
