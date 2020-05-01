@@ -39,8 +39,9 @@ async function createProfile(
 	cloudInitJSON,
 	authorizedPubKeyFilename,
 	networkInfo, phoneHomePort,
-	overrideFileContent, overrideContFilename,
-	noCopyHostTimezone
+	noCopyHostTimezone,
+	openVPN, 
+	overrideFileContent, overrideContFilename
 ) {
 
 	// embed ssh public key which will be used to send into the ffvpn container
@@ -53,13 +54,16 @@ async function createProfile(
 	 	"post": "all",
 	 	"tries": 10
 	}
-	cloudInitJSON.write_files = [
-		{ // for lxd - openvpn compatibility bug fix
-			"content": overrideFileContent,
-			"path":overrideContFilename,
-			"permissions":'0644'
-		}
-	]
+
+	if (openVPN) {
+		cloudInitJSON.write_files = [
+			{ // for lxd - openvpn compatibility bug fix
+				"content": overrideFileContent,
+				"path":overrideContFilename,
+				"permissions":'0644'
+			}
+		]
+	}
 	
 	if (!noCopyHostTimezone) {
 		try {

@@ -1,5 +1,5 @@
 'strict'
-const { /*execSync,*/ exec } = require('child_process')
+const { /*execSync,*/ exec, spawn } = require('child_process')
 const util = require('util')
 const fs = require('fs')
 const url = require('url')
@@ -39,19 +39,22 @@ const contUsername = 'ubunutu'
 // `
 
 
+
+
 // package_upgrade: true, ssha_authorized_keys, timezone
 // will be added internally
 var cloudInitJSON = {
 	//	"locale": "en_US.UTF-8", 
 	"locale": process.env.LANG, 
 	"packages": [
-	 	"firefox", 
-	 	"openvpn",
-		"xdotool", // necessary only when XServerXephyr will be 'true' at browse time. 
-		"xserver-xephyr",
-		"pulseaudio",
-		"xsel",
-		"openbox"
+		"python3-dev", "jupyter"
+	 	// "firefox", 
+		// "pulseaudio",
+		// "xsel",
+		// "openbox",
+	 	// "openvpn",
+		// "xdotool", // necessary only when XServerXephyr will be 'true' at browse time. 
+		// "xserver-xephyr"
 	],
 	"runcmd": [
 	]
@@ -86,6 +89,21 @@ async function initialize(args) {
 	if (args.indexOf('-ntz')>=0)
 		noCopyHostTimezone = false;
 
+	// let xServerXephyr=true
+	// if (args.indexOf('-nxephyr')>=0)
+	// 	xServerXephyr = false;
+	
+	let openVPN=false
+	if (args.indexOf('-openvpn')>=0)
+	 	openVPN = true;
+
+	// if (xServerXephyr) {
+	// 	cloudInitJSON.packages.push("xdotool");
+	// 	cloudInitJSON.packages.push("xserver-xephyr");
+	// }
+	// if (openVPN) {
+	// 	cloudInitJSON.packages.push("openvpn");
+	// }
 
 	// if name exists delete it
 	let clist = JSON.parse(syscmd(`lxc list --format json`))
@@ -120,9 +138,10 @@ async function initialize(args) {
 		cloudInitJSON,
 		`${sshKeyFilename}.pub`,
 		networkInfo, phoneHomePort,
+		noCopyHostTimezone,
+		openVPN,
 		'[Service]\nLimitNPROC=infinity\n',
 		overrideContFn,
-		noCopyHostTimezone
 	)
 
 	console.log("PROFILE done ...")
@@ -158,13 +177,144 @@ async function initialize(args) {
 
 	console.log("CONTAINER ip4 address is " + contip4)
 
-	// Copy the vpn client cert to container.
-	// For privacy's sake we didn't put cert in cloud-init data.
-	syscmd(`lxc file push  ${vpnClientCertFilename} ` + 
-		   `${lxcContName}/etc/openvpn/client/client.conf --gid 0 --uid 0`)
+	if (openVPN) {
+		// Copy the vpn client cert to container.
+		// For privacy's sake we didn't put cert in cloud-init data.
+		syscmd(`lxc file push  ${vpnClientCertFilename} ` + 
+			   `${lxcContName}/etc/openvpn/client/client.conf --gid 0 --uid 0`)
 
-	console.log(syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`))
+		console.log(syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`))
+	}
+
 }
+
+async function rsyscmd(cmd, contip4) {
+	let proc = spawn(
+		"ssh",
+		[
+			"-o", "UserKnownHostsFile=/dev/null",
+			"-o", "StrictHostKeyChecking=no",
+			"-L", "5678:localhost:5678", 
+			"-i", `${sshKeyFilename}`, `ubuntu@${contip4}`,
+			`${cmd}`
+		]
+	);
+	proc.stdout.on('data', (data) => {
+		console.log(`stdout: ${data}`);
+	});
+
+	proc.stderr.on('data', (data) => {
+		console.error(`stderr: ${data}`);
+	});
+
+	proc.on('close', (code) => {
+		console.log(`CLOSE event with code=${code}`);
+		if (code==0)
+			return 0;
+		else
+			throw `error ${code} remote command: ${cmd}`
+	});
+}
+
+var test_start = 0
+var test_end = 999
+async function test() {
+	// setup coomands to be run as user
+	let contip4 = getContainerIp4Address(lxcContName)
+	let rcmds = [
+//		`"echo \\"export PATH=/home/ubuntu/.local/bin:\\$PATH\\" > ./pathfix "`,
+//		`"echo \\"source ./pathfix\\" >> ./.bashrc "`, 
+		"env | grep -e PATH -e ENV -e BASH",
+		`\
+if ! [[ -f get-pip.py ]] ; then \
+	wget https://bootstrap.pypa.io/get-pip.py &&\
+	sudo python3 get-pip.py ;\
+fi`,
+		"pip install jupyterlab",
+		"pip install jupyter_http_over_ws",
+		"jupyter serverextension enable --py jupyter_http_over_ws",
+		"pip install matplotlib",
+		"pip install setuptools --upgrade",
+		"pip install tensorflow",
+		"sudo ln -s /usr/bin/python3 /usr/bin/python",
+	];
+	let i=0
+	for (const rc of rcmds) {
+		if (i<test_start)
+			continue;
+		if (i>=test_end)
+			break;
+		i++;
+		let c= 	`ssh  -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+			+ `-i ${sshKeyFilename}   ubuntu@${contip4} `
+		+ `bash --login -c '"${rc}"'`;
+		console.log(rc)
+		console.log(c)
+		console.log(syscmd(c))
+	}
+}
+
+async function serve(args) {
+	var contip4 = getContainerIp4Address(lxcContName)
+	var jupstr = `PATH=$PATH:$HOME/.local/bin /usr/bin/jupyter notebook --NotebookApp.allow_origin='https://colab.research.google.com' `
+		+ '--port 5678 --NotebookApp.port_retries=0 --no-browser --debug';
+	// 	var cmdstr = `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+	// 		+ `-f -L 8765:localhost:5678 ` 
+	// 		+ `-i ${sshKeyFilename} ubuntu@${contip4} `
+	// 		+  `"${jupstr}"`;
+	var proc=null;
+	await new Promise((resolve, reject)=>{
+		proc = spawn(
+			"ssh",
+			[
+				"-o", "UserKnownHostsFile=/dev/null",
+				"-o", "StrictHostKeyChecking=no",
+				"-L", "5678:localhost:5678", 
+				"-i", `${sshKeyFilename}`, `ubuntu@${contip4}`,
+				`${jupstr}`
+			]
+		);
+		
+		proc.stdout.on('data', (data) => {
+			console.log(`JUP[1]:${data}`);
+		});
+
+		proc.stderr.on('data', (data) => {
+			console.error(`JUP[2]: ${data}`);
+		});
+
+		proc.on('close', (code) => {
+			console.log(`child process exited with code ${code}, but server may be still running`);
+			if (code==0)
+				resolve(0);
+			else
+				reject(code)
+		});
+		proc.on('disconnect', () => {
+			// nope
+			console.log(`DISCONNECT - child process notified that parent process is exiting`);
+			proc.exit(0);
+		});
+		proc.on('SIGTERM', () => {
+			// nope 
+			console.log(`SIGTERM - child process notified that parent process is exiting`);
+			proc.exit(0);
+		});
+		proc.on('SIGINT', () => {
+			// nope
+			console.log(`SIGINT - child process notified that parent process is exiting`);
+			proc.exit(0);
+		});
+		
+	})
+
+	console.log(syscmd( `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+						+ `-i ${sshKeyFilename} ubuntu@${contip4} `
+						+  `"jupyter notebook stop 5678"`))
+		
+	//console.log('Jupyter server closed')		
+}
+
 
 async function browse(args) {
 	let XServerXephyr=true
@@ -311,11 +461,15 @@ Usage:
      Use when ufw is not the host firewall, or when sudo requires a password. 
    -ntz: 
      Don't use host /etc/timezone in container, the default is UTC.
+   -nxephyr: 
+     Don't install xephyr package.    
+   -openvpn 
+     Install openvpn package and set up as client with key found at XXXX
 
  - node index.js browse [-nxephyr] [-xephyrargs <string of pass thru args>]
    Launch Firefox browser
    -nxephyr: 
-     Don't use Xephyr on container, use host Xserver directly  
+     Don't use Xephyr on container, host Xserver directly  
    -xephyrargs <string of pass thru args>]
      Pass string of args directly to invocation of Xephyr
    -screen <W>x<H>
@@ -325,12 +479,14 @@ Usage:
    Print out what the ufw rule would be to allow container 'phone-home' on init-completion.
 
  - node index.js clip-to-cont
-   Copy the content of the host clipboard to the container clipboard.
+   Copy the content from the host clipboard to the container clipboard.
    It is expected this call would be mapped to a shortcut key.
+   Only necessary when using Xephyr.
 
  - node index.js clip-from-cont
-   Copy the content of the container clipboard to the host clipboard. 
+   Copy the content from the container clipboard to the host clipboard. 
    It is expected this call would be mapped to a shortcut key.
+   Only necessary when using Xephyr.
 `
 	console.log(usage)
 	
@@ -346,7 +502,13 @@ async function main(){
 		switch (process.argv[2]){
 		case 'init':
 			await initialize(process.argv.slice(3))
-			// continue to browse
+			break;
+		case 'test':
+			await test()
+			break;
+		case 'serve':
+			await serve(process.argv.slice(3));
+			break;
 		case 'browse':
 			await browse(process.argv.slice(3));
 			break;
@@ -366,6 +528,18 @@ async function main(){
 		}
 	}
 }
+
+process
+	.on('SIGTERM', () => {
+		console.log(`SIGTERM received`);
+		//proc.exit(0);
+	})
+	.on('SIGINT', () => {
+		console.log(`SIGINT received`);
+		//proc.exit(0);
+	})
+;
+
 
 main()
 	.then(()=>{
