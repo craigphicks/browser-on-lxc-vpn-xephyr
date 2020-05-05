@@ -2,10 +2,14 @@
 	"name": "browser-on-lxc-vpn-xephyr",
 	"version": "1.4.0",
 	"description": "js script to create lxc container with firefox, openvpn, and xephyr on Ubuntu",
-    "keywords": [
-		"browser", "firefox",
-		"lxc", "linux container", "container",
-		"vpn", "openvpn",
+	"keywords": [
+		"browser",
+		"firefox",
+		"lxc",
+		"linux container",
+		"container",
+		"vpn",
+		"openvpn",
 		"xephyr"
 	],
 	"main": "ffvpn-prof.js",
@@ -24,5 +28,13 @@
 	"bugs": {
 		"url": "https://github.com/craigphicks/browser-on-lxc-vpn-xephyr/issues"
 	},
-	"homepage": "https://github.com/craigphicks/browser-on-lxc-vpn-xephyr#readme"
+	"homepage": "https://github.com/craigphicks/browser-on-lxc-vpn-xephyr#readme",
+	"devDependencies": {
+		"eslint": "^6.8.0",
+		"eslint-config-standard": "^14.1.1",
+		"eslint-plugin-import": "^2.20.2",
+		"eslint-plugin-node": "^11.1.0",
+		"eslint-plugin-promise": "^4.2.1",
+		"eslint-plugin-standard": "^4.0.1"
+	}
 }
