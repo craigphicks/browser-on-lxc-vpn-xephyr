@@ -12,7 +12,13 @@
 		"openvpn",
 		"xephyr"
 	],
-	"main": "ffvpn-prof.js",
+  "main": "index.js",
+  "files": [
+    "ffvpn-prof.js",
+    "class-defs.js",
+    "class-sagemath.js",
+    "class-tensorflow-jupyter.js"
+  ],
 	"scripts": {
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},

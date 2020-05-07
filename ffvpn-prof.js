@@ -11,44 +11,9 @@ const { parse } = require('querystring');
 const events = require('events'); 
 const stream = require(`stream`);
 
-class sshCmdAsync_opts {
-  constructor(){
-    this.ssh="ssh";
-    this.addSshArgs=[];
-    this.stdin={
-      isFilename:false,
-      text:""
-    };
-    this.stdout=null;
-    this.stderr=null;
-  }
-  addSshArg(arg){
-    this.addSshArgs=this.addSshArgs.append(arg);
-  }
-  addLPipe(localPort, remotePort){
-    this.addSshArgs=this.addSshArgs.concat(
-      ['-L', `${localPort}:localhost:${remotePort}`]);
-  }
-  addRPipe(remotePort, localPort){
-    this.addSshArgs=this.addSshArgs.concat(
-      ['-R', `${remotePort}:localhost:${localPort}`]);
-  }
-  setStdinToText(text){
-    this.stdin.isFilename=false;
-    this.stdin.text=text;
-  }
-  setStdinToFile(fn){
-    this.stdin.isFilename=true;
-    this.stdin.text=fn;
-  }
-  setStdoutToParent(){
-    //this.stdout='inherit';
-    this.stdout='stdout';
-  }
-  setStderrToParent(){
-    this.stderr='stderr';
-  }
-}
+const { sshCmdAsync_opts } = require('./class-defs.js');
+const { DefaultSettings } = require('./class-default-settings.js');
+
 
 async function onExitOrError(proc){
   proc.once('exit', (code, signal) => {
@@ -64,11 +29,15 @@ async function onExitOrError(proc){
   });
 }
 
-async function readUntilClose(source, func){
+async function readUntilClose(source, writeAsync){
   source.on('data', (data)=> {
-    func(data.toString('utf8'));
+    writeAsync(data.toString('utf8')).catch(()=>{}).then(()=>{});
   });
   await new Promise((resolve)=>{
+    source.on('error', ()=>{
+      source.removeAllListeners(['data']);
+      resolve();
+    });
     source.on('close', ()=>{
       source.removeAllListeners(['data']);
       resolve();
@@ -76,7 +45,7 @@ async function readUntilClose(source, func){
   });
 }
 
-async function sshCmdAsync(prms, contip, opts=sshCmdAsync_opts){ 
+async function sshCmdAsync(prms, contip, logStreams, opts){ 
   //const addPath = 'export PATH="$HOME/.local/bin:$PATH"\n'
   function *genLines(text) {
     let lines = text.split(/\r\n|\r|\n/); // handles windows, old macs, linux/new macs EOLs
@@ -92,20 +61,23 @@ async function sshCmdAsync(prms, contip, opts=sshCmdAsync_opts){
     //"bash", "-s"
     //"cat"
   ];
-  
+
+  let remoteCommandsIn='';
   let readable=null;
   if (opts.stdin.text){
     if (opts.stdin.isFilename){
+      remoteCommandsIn = fs.readFileSync(opts.stdin.text,'utf8');
       readable = fs.createReadStream(opts.stdin.text,'utf8');
       // spawn requires the file be read-ready or it will fail so ... 
       await events.once(readable,'readable'); 
     } else {
+      remoteCommandsIn = opts.stdin.text;
       var g =  genLines(opts.stdin.text);
       readable = new stream.Readable({
         object:true,
         encoding:'utf8',
         //detached:true,
-        autoDestroy : true,
+        //autoDestroy : true,
         read() { 
           let next = g.next();
           if (next.done)
@@ -114,66 +86,90 @@ async function sshCmdAsync(prms, contip, opts=sshCmdAsync_opts){
             this.push(next.value+'\n');
         }
       });
-      //readable.push(opts.stdin.text); // should it be done line by line?
-      //console.log('TEST: ', readable.read()); // just a test
     }
   }
-  
+
   let prog = opts.ssh || "ssh";
   let args = [];
   if (opts.addSshArgs && opts.addSshArgs.length)
     args = opts.addSshArgs;
   args = args.concat(stdArgs);
-  //let cmdstr = [prog].concat(args).join(' ');
-  console.log(prog,' ',args.join(' '));
+  if (opts.remoteCmd && opts.remoteCmd.length)
+    args = args.concat(opts.remoteCmd);
+
+  let logText = `\
+--- local command line ---
+  ${prog} ${args.join(' ')}
++++ remote input begin +++
+${remoteCommandsIn||''}
++++ remote input end +++
+`;
+
+  if (opts.echoRemoteIn)
+    console.log(logText);
+  await logStreams.writeBoth(logText);
+
   let proc = spawn(
     prog, args,
     {
       stdio: [
         readable?'pipe':'ignore', 
-        opts.stdout?'pipe':'ignore', // 'inherit' not working
-        opts.stderr?'pipe':'ignore'  // 'inherit' not working
+        opts.stdout=='inherit'?'pipe':'ignore', // 'inherit' does not allow ...
+        opts.stderr=='inherit'?'pipe':'ignore'  // ... waiting for 'close' - so not used
       ]
     }
   );
 
   if (readable)
     readable.pipe(proc.stdin);
+
+
   let stdoutp=null,stderrp=null;
   if (opts.stdout)
-    stdoutp=readUntilClose(proc.stdout, process.stdout.write.bind(process.stdout));
+    stdoutp=readUntilClose(proc.stdout,
+      logStreams.writeOut.bind(logStreams)
+      //process.stdout.write.bind(process.stdout)
+    );
   if (opts.stderr)
-    stderrp=readUntilClose(proc.stderr, process.stderr.write.bind(process.stderr));   
-  let endp = await onExitOrError(proc);
-
-  await Promise.all([stdoutp,stderrp,endp]);
-
-  // await new Promise((resolve)=>{
-  //   process.stdout.write('STDOUT\n',()=>{ resolve(); });
-  // });
-  // await new Promise((resolve)=>{
-  //   process.stderr.write('STDERR\n',()=>{ resolve(); });
-  // });
-  //process.stderr.flush()
+    stderrp=readUntilClose(proc.stderr, 
+      logStreams.writeErr.bind(logStreams)
+      //process.stderr.write.bind(process.stderr)
+    );
+  
+  // only the outcome of onExitOrError is important
+  let [err, res] = await onExitOrError(proc).then(r=>[null,r],e=>[e,null]); 
+  await Promise.all([stdoutp,stderrp]).catch(e=>console.log('ignored error:',e));
+  if (err) throw err; 
+  else return res;
 }
 
-async function runPostInitScript(name,params) {
+async function runPostInitScript(name,params, logStreams) {
+  console.log(">>>runPostInitScript()");
   const contip = getContainerIp4Address(name);
-  let opts = new sshCmdAsync_opts();
-  opts.setStdinToText(`touch ~/.hushlogin`);
-  //opts.setStdoutToParent();
-  //opts.setStderrToParent();
-  await sshCmdAsync(params, contip, opts);  
+  await sshCmdAsync(params, contip, logStreams,
+    new sshCmdAsync_opts().setRemoteCommand(['touch', '~/.hushlogin']));  
+  await sshCmdAsync(params, contip, logStreams, params.postInitScript.cmdOpts);  
+  console.log("<<<runPostInitScript()");
 }
-async function runServe(name,params,serveIdx=0) {
+async function runServe(name,params,logStreams, args) {
+  console.log(">>>runServe()");
+  let serveId='default';
+  if (args && args.length && args[0][0]!='-'){
+    serveId = args[0];
+  }
+  assert(Object.prototype.hasOwnProperty.call(
+    params.serveScripts,serveId), `Found no serveScript named ${serveId}`);
+  let opts = params.serveScripts[serveId].cmdOpts;
   const contip = getContainerIp4Address(name);
-  let opts = new sshCmdAsync_opts();
-  await sshCmdAsync(params, contip, opts);
+  await sshCmdAsync(params, contip, logStreams, opts);
+  console.log("<<<runServe()");
 }
-async function runTestServe(name,params) {
+async function runTestServe(name,params,logStreams) {
+  //let p = new DefaultParams('test','');
   const contip = getContainerIp4Address(name);
   let opts = new sshCmdAsync_opts();
   opts.setStdinToText(`\
+echo \${argv[@]}
 export PATH=$HOME/.local/bin:$PATH
 echo $PATH
 echo this is from stdout >&1
@@ -182,10 +178,8 @@ echo this is from stderr >&2
   //opts.addRPipe(3001,4001);
   opts.setStdoutToParent();
   opts.setStderrToParent();
-  await sshCmdAsync(params, contip, opts);
+  await sshCmdAsync(params, contip, logStreams, opts);
 }
-
-
 
 function syscmd(cmd) {
   var so='';
@@ -200,97 +194,22 @@ function syscmd(cmd) {
     throw e;
   }
 }
-// function syscmdAsync(cmd) {
-  
-//   return new Promise((resolve, reject)=>{
-//     let cmda = cmd.split(/\s*\s/);
-//     let proc = spawn(cmda[0], cmda.slice(1));
-//     let outstr = "";
-//     let errstr = "";
-//     proc.stdout.on('data', (data) => {
-//       outstr += `${data}\n`;
-//     });
-    
-//     proc.stderr.on('data', (data) => {
-//       errstr += `${data}\n`;
-//     });
-    
-//     proc.on('close', (code) => {
-//       console.log(
-//         `${cmd} exited with code ${code}, but might have been forked/spawned, etc.`);
-//       if (code==0)
-//         resolve(outstr);
-//       else
-//         reject(errstr);
-//     });	
-//   });
+
+
+// function ParamsSagemath(tz){
+//   let p = DefaultParams("sagemath",tz);
+// //  cloudInit.packages.concat([
+// //    "sagemath", "firefox", "pulseaudio"
+// //  ]);
+//   let opts = p.serveScripts.default.cmdOpts;
+//   opts.addRPipe(44713,4713);
+//   opts.addXPipe();
 // }
-  
 
-
-function DefaultParams(name,tz) { 
-  return {
-    sshKeyFilename : `/home/${process.env.USER}/.ssh/to-${name}`,
-    openVPN : {
-      enable:false,
-      vpnClientCertFilename : `/home/${process.env.USER}/client-${name}.ovpn`
-    },
-    lxcImageSrc : `ubuntu:18.04`,
-    contUsername : 'ubuntu',
-    lxcImageAlias : `ub18-im`,
-    lxcCopyProfileName : 'default',
-    lxcContBridgeName : 'lxdbr0',
-    phoneHome : {
-      autoLXCBridge: true,
-      ufwRule : {
-        enable: true,
-      },
-      port:3000
-    },
-    postInitScript : {
-      addSshArgs : [],
-      stdin : {
-        isFilename: false,
-        text : ""
-      }
-    },
-    serveScripts :[
-      {
-        addSshArgs : [],
-        stdin : {
-          isFilename: false,
-          text : ""
-        },
-        stdOutToConsole:false,
-        stdErrToConsole:false
-      }
-    ],
-    cloudInit : { 
-      timezone: tz,
-      locale: process.env.LANG, 
-      packages : [],
-      runcmd : [
-      ],
-    },
-  };
-}
-
-function DefaultSettingsContent() {
-  let tz="";
-  try { 
-    tz = fs.readFileSync(`/etc/timezone`,'utf8');
-    tz = tz.slice(0,-1); // gte rid of EOL
-  } catch (e) {
-    console.log(`WARNING: couldn't read user timezone, ${e}`);
-  }  
-  let settings = {
-    "dflt" : DefaultParams("dflt",tz)
-  };
-  return settings;	
-}
 
 function writeDefaultSettingFile(fn){
-  let yml = yaml.safeDump(DefaultSettingsContent());
+  let yml = yaml.safeDump(new DefaultSettings(), 
+    {lineWidth:999});
   fs.writeFileSync(fn, yml, 'utf8');
 }
 
@@ -317,8 +236,6 @@ function makeUfwRule(params, networkInfo){
   return ret;
 }
 
-
-
 function getContainerIp4Address(lxcContName){
   return JSON.parse(syscmd(`lxc list --format json`))
     .find(c=>c.name==lxcContName)
@@ -326,7 +243,6 @@ function getContainerIp4Address(lxcContName){
     .find(a=>a.family=='inet')
     .address;
 }
-
 
 //   let overrideContFn = `/etc/systemd/system/openvpn-client@.service.d/override.conf`;
 //   let lxcProfileName = `${lxcContName}-prof`;
@@ -506,8 +422,14 @@ async function waitPhoneHome(phoneHomeToAddr, phoneHomePort){
 //   return p;
 // })();
 
-async function initialize(lxcContName, params, args) {
-    
+async function initialize(lxcContName, params, logStreams, args) {
+  console.log(">>>initialize()");
+  let noPostInit=false, noServe=false;
+  if (args) {
+    noPostInit = args.indexOf('--nopostinit')>=0;
+    noServe = args.indexOf('--noserve')>=0;
+  } 
+
   //let output = await syscmdAsync('echo $PATH');
   //console.log(output);
   // let xServerXephyr=true
@@ -597,6 +519,11 @@ async function initialize(lxcContName, params, args) {
     console.log(syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`));
   }
 
+  if (!noPostInit)
+    await runPostInitScript(lxcContName,params);
+  if (!noServe)
+    await runServe(lxcContName,params);
+  console.log("<<<intialize()");
 }
 
 
@@ -844,7 +771,6 @@ exports.getNetworkInfo = getNetworkInfo;
 exports.runPostInitScript = runPostInitScript;
 exports.runServe = runServe;
 exports.runTestServe = runTestServe;
-
 
 // exports.createProfile =  createProfile
 // exports.syscmd = syscmd

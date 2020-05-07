@@ -1,17 +1,16 @@
 'strict';
-const assert = require('assert').strict;
+//const assert = require('assert').strict;
 const fs = require('fs');
-
+const { LogStreams } = require('./class-defs.js');
 const { initialize, 
-  runInitScript,
+  runPostInitScript,
   runServe,
   runTestServe,
   makeUfwRule,
   getNetworkInfo,
   readSettingFile,
-  writeDefaultSettingFile
-}
-    = require('./ffvpn-prof.js');
+  writeDefaultSettingFile,
+} = require('./ffvpn-prof.js');
 
 
 
@@ -72,19 +71,26 @@ async function main(){
   //	console.log(process.argv.length)
   //	console.log(process.argv)
 
-  let cmd, lxcContName, argOff=0;
-  // create an instance of a container from that image
-
-  if (process.argv.length>2){
-    cmd = process.argv[2];
-    argOff = 2;
-  }
-  if (process.argv.length>3){
-    lxcContName = process.argv[3];
-    argOff = 3;
-  }
+  let cmd, lxcContName, argOff=2;
 
   let file = `./params.yml`;
+
+  if (process.argv.length>argOff)
+    if (process.argv[argOff]=='--file'){
+      file = process.argv[argOff+1];
+      argOff+=2;
+    }
+  
+
+  if (process.argv.length>argOff){
+    cmd = process.argv[argOff];
+    argOff += 1;
+  }
+  if (process.argv.length>argOff){
+    lxcContName = process.argv[argOff];
+    argOff += 1;
+  }
+
 
   let settings; 
   if (fs.existsSync(file))
@@ -98,49 +104,71 @@ change if required and restart
     return;
   }
 
-  
-  
-  if (!cmd || !lxcContName)
-    help();
-  else {
-    assert(lxcContName, "must provide container name");
-    assert(Object.prototype.hasOwnProperty.call(
-      settings,lxcContName), 
-    `${lxcContName} not found in settings file`);
-    let params = settings[lxcContName];
-    switch (cmd){
-    case 'init':
-      await initialize(lxcContName, 
-        params, 
-        process.argv.slice(argOff));
-      break;
-    case 'post-init':
-      await runInitScript(lxcContName, 
-        params, 
-        process.argv.slice(argOff));
-      break;
-    case 'test-serve':
-      await runTestServe(lxcContName, 
-        params, 
-        process.argv.slice(argOff));
-      break;
-    case 'serve':
-      await runServe(lxcContName, 
-        params, 
-        process.argv.slice(argOff));
-      break;
-    case 'autoUfwRule':
-      console.log(makeUfwRule(getNetworkInfo(params)));
-      break;
-    // the following is for case when Xephyr is being used
-    // case 'clip-to-cont':
-    // 	await clipNotify(0);
-    // 	break;
-    // case 'clip-from-cont':
-    // 	await clipNotify(1);
-    // 	break;
-    default: help();
+  if (!lxcContName){
+    if (settings.keys().length==1)
+      lxcContName = settings.keys()[0];
+    else if (settings.keys().includes('default'))
+      lxcContName = 'default';
+    else {
+      console.error('ERROR: cannot determine container name uniquely');
+      return;
     }
+    console.error(`using container name "${lxcContName}"`);
+  }
+  var logStreams=null;
+  try {
+    if (!cmd)
+      help();
+    else {
+      let params = settings[lxcContName];
+      logStreams = new LogStreams(settings.shared.logdir, 
+        `${lxcContName}-out.log`, `${lxcContName}-err.log`);
+      switch (cmd){
+      case 'init':
+        await initialize(lxcContName, 
+          params, logStreams,
+          process.argv.slice(argOff));
+        break;
+      case 'post-init':
+        await runPostInitScript(lxcContName, 
+          params, logStreams,
+          process.argv.slice(argOff));
+        break;
+      case 'test-serve':
+        await runTestServe(lxcContName, 
+          params, logStreams,
+          process.argv.slice(argOff));
+        break;
+      case 'serve':
+        await runServe(lxcContName, 
+          params, logStreams,
+          process.argv.slice(argOff));
+        break;
+      case 'post-init-serve':
+        await runPostInitScript(lxcContName, 
+          params, logStreams,
+          process.argv.slice(argOff));
+        await runServe(lxcContName, 
+          params, logStreams,
+          process.argv.slice(argOff));
+        break;
+      case 'autoUfwRule':
+        console.log(makeUfwRule(getNetworkInfo(params)));
+        break;
+        // the following is for case when Xephyr is being used
+        // case 'clip-to-cont':
+        // 	await clipNotify(0);
+        // 	break;
+        // case 'clip-from-cont':
+        // 	await clipNotify(1);
+        // 	break;
+      default: help();
+      }
+    }
+  }
+  finally {
+    if (logStreams)
+      await logStreams.close();
   }
 }
 
@@ -163,7 +191,7 @@ main()
   })
   .catch(e => {
     process.exitCode=1;
-    console.log("FAIL",e);
+    console.error("FAIL",e);
   })	
   .finally(()=>{
     console.log("EXIT");

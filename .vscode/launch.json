@@ -23,11 +23,11 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "init dflt",
+      "name": "init firefox",
       "program": "${workspaceFolder}/index.js",
       "console": "internalConsole",
       "outputCapture": "std",
-      "args":[ "init", "dflt"]
+      "args":[ "post-init", "firefox"]
       // "args": [
       //   "-i",
       //   "${workspaceFolder}/test/data/in.demo0.js",
