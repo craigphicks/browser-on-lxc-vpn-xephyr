@@ -9,7 +9,7 @@ class ParamsTensorflowJupyter extends ParamsDefault {
     let opts = this.postInitScript.cmdOpts;
     opts.setStdinToText(`\
 export PATH="$HOME/.local/bin:$PATH"
-(sudo apt-get -qq -o install firefox pulseaudio python3-dev jupyter || exit 10) | grep -v pack
+sudo apt-get -qq -y install firefox pulseaudio python3-dev jupyter || exit 10
 [[ -f get-pip.py ]] || wget https://bootstrap.pypa.io/get-pip.py || echo 20 
 which pip || sudo python3 get-pip.py || exit 25
 pip install jupyterlab || exit 30

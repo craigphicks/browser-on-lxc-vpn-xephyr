@@ -9,7 +9,7 @@ class ParamsFirefox extends ParamsDefault {
     let opts = this.postInitScript.cmdOpts;
     opts.setStdinToText(`\
 export PATH="$HOME/.local/bin:$PATH"
-sudo apt-get -qq -o Dpkg::-D=0 install firefox pulseaudio | grep -v pack
+sudo apt-get -qq -y install firefox pulseaudio
 `   );
     opts = this.serveScripts['default'].cmdOpts;
     opts.addPipeForX11();

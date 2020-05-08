@@ -16,24 +16,29 @@ const { DefaultSettings } = require('./class-default-settings.js');
 
 
 async function onExitOrError(proc){
-  proc.once('exit', (code, signal) => {
-    if (code === 0) {
-      return;
-    } else {
-      throw new Error(`(onExitOrError) error code [${code}], signal [${signal}]`);
-    }
-  });
-  proc.once('error', (e) => {
-    proc.removeAllListeners(['exit']);
-    throw new Error(`(onExitOrError) error [${e}]`);
+  return await new Promise((resolve, reject)=>{
+    proc.once('exit', (code, signal) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`(onExitOrError) error code [${code}], signal [${signal}]`));
+      }
+    });
+    proc.once('error', (e) => {
+      proc.removeAllListeners(['exit']);
+      reject(new Error(`(onExitOrError) error [${e}]`));
+    });
   });
 }
 
 async function readUntilClose(source, writeAsync){
-  source.on('data', (data)=> {
-    writeAsync(data.toString('utf8')).catch(()=>{}).then(()=>{});
+  source.on('data', async (data)=> {
+    await writeAsync(data.toString('utf8'))
+      .catch((e)=>{
+        console.error(`readUntilClose UNEXPECTED ERROR: ${e}`);
+      });
   });
-  await new Promise((resolve)=>{
+  return await new Promise((resolve)=>{
     source.on('error', ()=>{
       source.removeAllListeners(['data']);
       resolve();
@@ -139,6 +144,9 @@ ${remoteCommandsIn||''}
   // only the outcome of onExitOrError is important
   let [err, res] = await onExitOrError(proc).then(r=>[null,r],e=>[e,null]); 
   await Promise.all([stdoutp,stderrp]).catch(e=>console.log('ignored error:',e));
+  // because deep inside LogStreams we have been writing lines ending with `\r` we must add `\n'
+  process.stdout.write('\n');
+  process.stderr.write('\n');
   if (err) throw err; 
   else return res;
 }
@@ -520,9 +528,9 @@ async function initialize(lxcContName, params, logStreams, args) {
   }
 
   if (!noPostInit)
-    await runPostInitScript(lxcContName,params);
+    await runPostInitScript(lxcContName,params,logStreams);
   if (!noServe)
-    await runServe(lxcContName,params);
+    await runServe(lxcContName,params,logStreams);
   console.log("<<<intialize()");
 }
 

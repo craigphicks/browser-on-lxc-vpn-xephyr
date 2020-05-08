@@ -98,10 +98,9 @@ async function main(){
   else {
     writeDefaultSettingFile(file);
     console.error(`\
-wrote non-existant setting file "${file}",
-change if required and restart
+Setting file "${file}" didn't exist so created one with default values.
 `);
-    return;
+    settings = readSettingFile(file);
   }
 
   if (!lxcContName){
@@ -172,27 +171,54 @@ change if required and restart
   }
 }
 
-process
-  .on('SIGTERM', () => {
-    console.log(`SIGTERM received`);
-    //proc.exit(0);
-  })
-  .on('SIGINT', () => {
-    console.log(`SIGINT received`);
-    //proc.exit(0);
-  })
-;
+async function siggedMain() {
+  /* 
+  When child_process.exec() is used to call some LXC/D functions (at least 'lxc launch')
+  the LXC/D process usurps SIGINT until Ctrl-C is hit 3 times in succession.
+  After that, for some obscure priority reason, when calling Promise.race([sigp,mainp])
+  the sigp is not yet evaluated as being resolved, so we can't get an exit message saying
+  "user generated SIGINT" - instead it looks like an exec'd command failed. 
+  The solution was to call Promise.race(...) again using a setImmediate to delay evaluation.
+  I'd like to know if this would ever be necessary for more simple child processes 
+  (than 'lxc launch ...').
+  */  
+  let sig = new Promise((resolve,reject)=>{
+    process
+      .on('SIGTERM', () => {
+        console.error('siggedMain: sigterm handler');
+        reject(new Error(`user generated SIGTERM`)); 
+      })
+      .on('SIGINT', () => {
+        console.error('siggedMain: sigint handler');
+        reject(new Error(`user generated SIGINT`));
+      });
+  }).catch((e)=>{return e;});
+  let mainp = main().then(()=>{return null;}, (e)=>{return e;});
+  await Promise.race([sig, mainp]);
+  return await new Promise((resolve,reject)=>{
+    setImmediate(()=>{
+      Promise.race([sig, mainp]).then((r)=>{
+        if (r==null) 
+          resolve();
+        else
+          reject(r);
+      });
+    });
+  });
+} 
 
-
-main()
+siggedMain()
   .then(()=>{
     process.exitCode=0;
     console.log("SUCCESS");
   })
   .catch(e => {
-    process.exitCode=1;
-    console.error("FAIL",e);
+    //process.exitCode=1;
+    console.error("FAIL/EXIT",e.message);
+    process.exit(1);
   })	
   .finally(()=>{
     console.log("EXIT");
   });
+
+

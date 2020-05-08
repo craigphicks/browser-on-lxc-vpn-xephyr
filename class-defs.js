@@ -104,6 +104,10 @@ class LogStreams {
     fs.mkdirSync(dir,{recursive:true});
     this.stdout = fs.createWriteStream(`${dir}/${filenameStdout}`,'utf8');
     this.stderr = fs.createWriteStream(`${dir}/${filenameStderr}`,'utf8');
+    this.outn = 0; // number of lines
+    this.errn = 0; // number of lines
+    this.outNumErrors=0;
+    this.errNumErrors=0;
   }
   async _write(s,t) {
     // https://nodejs.org/api/events.html#events_error_events    
@@ -114,33 +118,60 @@ class LogStreams {
     // and the Node.js process exits.    
     return await new Promise((resolve,reject)=>{
       let cb1 = (e)=>{ reject(e);};
-      let cb2 = ()=>{ reject(Error(`stream closed before write complete ${t}`));};
+      //      let cb2 = ()=>{ reject(Error(`stream closed before write complete ${t}`));};
       s.once('error', cb1);
-      s.once('close', cb2);
+      //      s.once('close', cb2);
       s.write(t, (e) => {
-        s.removeListener('error',cb1);
-        s.removeListener('close',cb2);
-        if (e) reject(e);
-        else resolve();        
+        //        s.removeListener('error',cb1);
+        s.removeAllListeners('error');
+        //        s.removeListener('close',cb2);
+        if (e) 
+          reject(e);
+        else 
+          resolve(null);        
       });
-    }).catch(()=>{}); // after all that, simply ignore the errors!  
+    });
   }
-  async writeOut(t) { return await this._write(this.stdout,t); }
-  async writeErr(t) { return await this._write(this.stderr,t); }
+  async writeOut(t) {
+    this.outn++;
+    let e = await this._write(this.stdout,t).catch((e)=>{ return e; });
+    if (e) {
+      this.outNumErrors++;
+      process.stdout.write(`LogStreams ERROR: ${e.message}`);
+    } 
+    process.stdout.write(`\
+\r# of (chunks,write errors):\
+stdout(${this.outn},${this.outNumErrors}), \
+stderr(${this.errn},${this.errNumErrors})`);
+    return null;
+  }
+  async writeErr(t) { 
+    this.errn++;
+    let e = await this._write(this.stderr,t).catch((e)=>{ return e; });
+    if (e) {
+      this.errNumErrors++;
+      process.stderr.write(`LogStreams ERROR: ${e.message}`);
+    } 
+    process.stderr.write(`\
+\r# of (chunks,write errors):\
+stdout(${this.outn},${this.outNumErrors}), \
+stderr(${this.errn},${this.errNumErrors})`);
+    return null;
+  }
   async writeBoth(t) { 
-    return Promise.all([this._write(this.stdout,t), this._write(this.stderr,t)]);
+    return await Promise.all([this.writeOut(t),this.writeErr(t)]);
   }
   async _close(s) {
-    return new Promise((resolve)=>{
+    return await new Promise((resolve)=>{
       s.on('error', ()=>{resolve();});
-      s.close('CLOSING STREAM', ()=>{ 
-        s.removeAllListeners('error');
+      s.end('FAMOUS LAST WORDS\n', 'utf8', ()=>{ 
+        //s.removeAllListeners('error');
         resolve();
       });
     });
   }
   async close() {
-    return Promise.all([this._close(this.stdout), this._close(this.sterr)]);
+    return await Promise.all([this._close(this.stdout), this._close(this.stderr)]);
   }
 
 }
