@@ -6,6 +6,7 @@ class sshCmdAsync_opts {
   constructor(){
     this.ssh="ssh";
     this.addSshArgs=[];
+    this.afterDestination='';
     this.remoteCmd=[];
     this.stdin={// piped script
       isFilename:false,
@@ -95,6 +96,7 @@ class ParamsDefault {
         runcmd : [
         ],
       },
+      sshfsMountDir : `\${HOME}/mnt`, 
     });
   }  
 }
@@ -164,7 +166,7 @@ stderr(${this.errn},${this.errNumErrors})`);
   async _close(s) {
     return await new Promise((resolve)=>{
       s.on('error', ()=>{resolve();});
-      s.end('FAMOUS LAST WORDS\n', 'utf8', ()=>{ 
+      s.end('END OF FILE\n', 'utf8', ()=>{ 
         //s.removeAllListeners('error');
         resolve();
       });

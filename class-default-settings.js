@@ -18,6 +18,28 @@ class DefaultSettings {
       {
         shared : {
           logdir: "./log",
+          sshArgs : {
+            prog : 'ssh',
+            args : [
+              '-o','UserKnownHostsFile=/dev/null',  
+              '-o','StrictHostKeyChecking=no',
+            ],
+          }, // currently not used
+          sshfsMountArgs : {
+            prog : 'sshfs',
+            args : [
+              '-o','UserKnownHostsFile=/dev/null',  
+              '-o','StrictHostKeyChecking=no',
+              '-o','idmap=user', 
+              '-o','reconnect',
+            ],
+          }, 
+          sshfsUnmountArgs : {
+            prog : 'fusermount',
+            args : [
+              '-u',
+            ],
+          } 
         },
         "default" : new ParamsDefault("default",tz,3000),
         "firefox" : new ParamsFirefox(tz,3010),

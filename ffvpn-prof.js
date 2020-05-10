@@ -244,6 +244,12 @@ function makeUfwRule(params, networkInfo){
   return ret;
 }
 
+function containerExists(lxcContName){
+  return JSON.parse(syscmd(`lxc list --format json`))
+    .some(c=>c.name==lxcContName);
+
+}
+
 function getContainerIp4Address(lxcContName){
   return JSON.parse(syscmd(`lxc list --format json`))
     .find(c=>c.name==lxcContName)
@@ -686,6 +692,17 @@ DISPLAY=:2 PULSE_SERVER=tcp:localhost:44713 firefox &
   }
 }
 
+// async function sshfsMount(lxcContName, shared, params, logStreams, args){
+//   opts = new sshCmdAsync_opts()
+//   opts.prog = shared.sshfsMount.prog;
+//   opts.addSshArgs = shared.sshfsMount.args;
+//   opts.addSshArgs.concat([
+//     '-o', `IdentityFile=${params.sshKeyFilename}`,
+//   ])
+//   syscmd(
+// }
+
+
 function configPulseAudioOnHost() {
   //set pulseaudio to accept audio from host
   //let networkInfo = getNetworkInfo();
@@ -779,6 +796,9 @@ exports.getNetworkInfo = getNetworkInfo;
 exports.runPostInitScript = runPostInitScript;
 exports.runServe = runServe;
 exports.runTestServe = runTestServe;
+exports.containerExists = containerExists;
+exports.sshfsMount = sshfsMount;
+exports.sshfsUnmount = sshfsUnmount;
 
 // exports.createProfile =  createProfile
 // exports.syscmd = syscmd

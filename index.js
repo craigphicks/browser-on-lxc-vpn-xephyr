@@ -10,6 +10,9 @@ const { initialize,
   getNetworkInfo,
   readSettingFile,
   writeDefaultSettingFile,
+  containerExists,
+  sshfsMount,
+  sshfsUnmount,
 } = require('./ffvpn-prof.js');
 
 
@@ -104,9 +107,9 @@ Setting file "${file}" didn't exist so created one with default values.
   }
 
   if (!lxcContName){
-    if (settings.keys().length==1)
-      lxcContName = settings.keys()[0];
-    else if (settings.keys().includes('default'))
+    if (Object.keys(settings).length==1)
+      lxcContName = Object.keys(settings)[0];
+    else if (Object.keys(settings).includes('default'))
       lxcContName = 'default';
     else {
       console.error('ERROR: cannot determine container name uniquely');
@@ -119,6 +122,10 @@ Setting file "${file}" didn't exist so created one with default values.
     if (!cmd)
       help();
     else {
+      if (cmd!='init' && !containerExists(lxcContName)){
+        throw new Error(
+          `container named '${lxcContName}' doesn't exist, must create with 'init' first`);
+      }
       let params = settings[lxcContName];
       logStreams = new LogStreams(settings.shared.logdir, 
         `${lxcContName}-out.log`, `${lxcContName}-err.log`);
@@ -151,8 +158,18 @@ Setting file "${file}" didn't exist so created one with default values.
           params, logStreams,
           process.argv.slice(argOff));
         break;
-      case 'autoUfwRule':
+      case 'auto-ufw-rule':
         console.log(makeUfwRule(getNetworkInfo(params)));
+        break;
+      case 'sshfs-mount':
+        await sshfsMount(lxcContName, 
+          settings.shared, params, logStreams,
+          process.argv.slice(argOff));
+        break;
+      case 'sshfs-unmount':
+        await sshfsUnmount(lxcContName, 
+          settings.shared, params, logStreams,
+          process.argv.slice(argOff));
         break;
         // the following is for case when Xephyr is being used
         // case 'clip-to-cont':
