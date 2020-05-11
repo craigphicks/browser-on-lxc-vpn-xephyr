@@ -61,10 +61,10 @@ class sshCmdAsync_opts {
 class ParamsDefault {
   constructor(name,tz,phoneHomePort){
     Object.assign(this, {
-      sshKeyFilename : `/home/${process.env.USER}/.ssh/to-${name}`,
+      sshKeyFilename : `${process.env.HOME}/.ssh/to-${name}`,
       openVPN : {
         enable:false,
-        vpnClientCertFilename : `/home/${process.env.USER}/client-${name}.ovpn`
+        vpnClientCertFilename : `${process.env.HOME}/client-${name}.ovpn`
       },
       lxcImageSrc : `ubuntu:18.04`,
       contUsername : 'ubuntu',
@@ -96,7 +96,7 @@ class ParamsDefault {
         runcmd : [
         ],
       },
-      sshfsMountDir : `\${HOME}/mnt`, 
+      sshfsMountRoot : `${process.env.HOME}/mnt`, 
     });
   }  
 }
@@ -111,6 +111,8 @@ class LogStreams {
     this.outNumErrors=0;
     this.errNumErrors=0;
   }
+  outStream(){return this.stdout;}
+  errStream(){return this.stderr;}
   async _write(s,t) {
     // https://nodejs.org/api/events.html#events_error_events    
     // When an error occurs within an EventEmitter instance, the typical action is for an 'error' 
@@ -134,34 +136,37 @@ class LogStreams {
       });
     });
   }
-  async writeOut(t) {
+  async writeOut(t,std=true) {
     this.outn++;
     let e = await this._write(this.stdout,t).catch((e)=>{ return e; });
     if (e) {
       this.outNumErrors++;
-      process.stdout.write(`LogStreams ERROR: ${e.message}`);
+      process.stdout.write(`LogStreams ERROR: ${e.message}\n`);
     } 
-    process.stdout.write(`\
+    if (std)
+      process.stdout.write(`\
 \r# of (chunks,write errors):\
 stdout(${this.outn},${this.outNumErrors}), \
 stderr(${this.errn},${this.errNumErrors})`);
     return null;
   }
-  async writeErr(t) { 
+  async writeErr(t,std=true) { 
     this.errn++;
     let e = await this._write(this.stderr,t).catch((e)=>{ return e; });
     if (e) {
       this.errNumErrors++;
-      process.stderr.write(`LogStreams ERROR: ${e.message}`);
+      process.stderr.write(`LogStreams ERROR: ${e.message}\n`);
     } 
-    process.stderr.write(`\
+    if (std)
+      process.stderr.write(`\
 \r# of (chunks,write errors):\
 stdout(${this.outn},${this.outNumErrors}), \
 stderr(${this.errn},${this.errNumErrors})`);
+
     return null;
   }
-  async writeBoth(t) { 
-    return await Promise.all([this.writeOut(t),this.writeErr(t)]);
+  async writeBoth(t,std=true) { 
+    return await Promise.all([this.writeOut(t,std),this.writeErr(t,std)]);
   }
   async _close(s) {
     return await new Promise((resolve)=>{

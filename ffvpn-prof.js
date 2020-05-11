@@ -14,6 +14,8 @@ const stream = require(`stream`);
 const { sshCmdAsync_opts } = require('./class-defs.js');
 const { DefaultSettings } = require('./class-default-settings.js');
 
+//const asyncCmd = require('./async-cmd.js');
+
 
 async function onExitOrError(proc){
   return await new Promise((resolve, reject)=>{
@@ -692,15 +694,129 @@ DISPLAY=:2 PULSE_SERVER=tcp:localhost:44713 firefox &
   }
 }
 
-// async function sshfsMount(lxcContName, shared, params, logStreams, args){
-//   opts = new sshCmdAsync_opts()
-//   opts.prog = shared.sshfsMount.prog;
-//   opts.addSshArgs = shared.sshfsMount.args;
-//   opts.addSshArgs.concat([
-//     '-o', `IdentityFile=${params.sshKeyFilename}`,
-//   ])
-//   syscmd(
-// }
+async function sshfsMount(lxcContName, shared, params, logStreams,argsIn){
+//  await sshfsUnmount(lxcContName, shared, params, logStreams).then(
+//    ()=>{ console.log(`DEBUG: sshfsUnmount returned success`);},
+//    (e)=>{ console.log(`DEBUG: sshfsUnmount return error: ${e.message}`);}
+//  );
+  let debug = (argsIn.indexOf('-d')>=0);
+  let contip4 = getContainerIp4Address(lxcContName);
+  if (!fs.existsSync(params.sshfsMountRoot))
+    fs.mkdirSync(params.sshfsMountRoot,{recursive:true});
+  let mountDir = params.sshfsMountRoot + '/' + lxcContName;
+  if (!fs.existsSync(mountDir))
+    fs.mkdirSync(mountDir);
+  //fs.rmdirSync(mountDir); // will fail if directory not empty
+  //if (!fs.existsSync(mountDir))
+  //fs.mkdirSync(mountDir,{recursive:true});  
+  let prog=shared.sshfsMountArgs.prog;
+  let args = [];
+  if (debug)
+    args=[
+      '-o', 'sshfs_debug', '-d'
+    ];
+  args=args.concat(shared.sshfsMountArgs.args);
+  args=args.concat([
+    '-o', `IdentityFile=${params.sshKeyFilename}`,
+    `${params.contUsername}@${contip4}:`,
+    mountDir,
+  ]);
+  let strcmd = `${prog} ${args.join(' ')}\n`;
+  //await logStreams.writeBoth(strcmd);
+  console.log(strcmd);
+  //  let ostrm='ignore',estrm='ignore';
+  let ofn=shared.logdir+`/${lxcContName}-sshfs-out.log`;
+  let efn=shared.logdir+`/${lxcContName}-sshfs-err.log`;
+  let ostrm = fs.createWriteStream(ofn);
+  let estrm = fs.createWriteStream(efn);
+  let mp=(x)=>{ return new Promise((res,rej)=>{x.on('error',rej).on('open',res);});};
+  await Promise.all([mp(ostrm),mp(estrm)]);
+  
+  let stdio=['ignore',ostrm,estrm];
+  let proc=spawn(prog,args,{ stdio: stdio, detach:false });   
+
+  let procPromise = new Promise((resolve, reject)=>{
+    proc.on('error',(e)=>{
+      reject(e);
+    }).on('exit',(code,signal)=>{
+      if (code || signal) 
+        reject(new Error(`sshfsMount code(${code}), signal(${signal})`));
+      console.log('exit event');
+      resolve();
+    }).on('disconnect',()=>{
+      console.log('disconnect event');
+      resolve();
+    }).on('close',()=>{
+      console.log('close event');
+      resolve();
+    });
+    setTimeout(()=>{proc.unref();},1000);
+  });
+  let parr = [procPromise];
+  // parr.push(new Promise((resolve,reject)=>{
+  //   proc.stdout.on('error',reject).on('end',resolve);
+  // }));
+  // parr.push(new Promise((resolve,reject)=>{
+  //   proc.stderr.on('error',reject).on('end',resolve);
+  // }));
+  return await Promise.all(parr).catch(async (e)=>{ 
+    await logStreams.writeBoth(`${e}\n`);
+    let errtxt = fs.readFileSync(efn).toString();
+    console.error('\n'+errtxt);
+    throw e;
+  });
+
+
+  //   let procPromise = new Promise((resolve, reject)=>{
+  //   proc.on('error',(e)=>{
+  //     reject(e);
+  //   }).on('exit');
+  //   // try to leave a gap for an error if spawn fails.
+  //   setImmediate(()=>{
+  //     proc.unref();
+  //     setImmediate(()=>{resolve();});
+  //   });
+  // }).catch(async (e)=>{ 
+  //   await logStreams.writeBoth(`${e}\n`);
+  //   throw e;
+  // });
+}
+
+async function sshfsUnmount(lxcContName, shared, params, logStreams){
+  //let contip4 = getContainerIp4Address(lxcContName);  
+  let prog=shared.sshfsUnmountArgs.prog;
+  let args=shared.sshfsUnmountArgs.args.concat([
+    `${params.sshfsMountRoot}/${lxcContName}`,
+  ]);
+  await logStreams.writeBoth(`${prog} ${args.join(' ')}\n`,false);
+  console.log(`${prog} ${args.join(' ')}`);
+  let proc=spawn(prog,args,{ 
+    stdio: ['ignore','pipe','pipe']
+  });
+  let procPromise = new Promise((resolve, reject)=>{
+    proc.on('error',(e)=>{
+      reject(e);
+    }).on('exit',(code,signal)=>{
+      if (code || signal) 
+        reject(new Error(`sshfsUnmount code(${code}), signal(${signal})`));
+      resolve();
+    });
+  });
+  let stdoutPromise = new Promise((resolve,reject)=>{
+    proc.stdout.pipe(logStreams.outStream(), {end:false})
+      .on('error',reject).on('end',resolve);
+  });
+  let stderrPromise = new Promise((resolve,reject)=>{
+    proc.stderr.pipe(logStreams.errStream(), {end:false})
+      .on('error',reject).on('end',resolve);
+  });
+  return await Promise.all([procPromise,stdoutPromise,stderrPromise]).catch(async (e)=>{ 
+    await logStreams.writeBoth(`${e}\n`,false);
+    throw e;
+  });
+}
+
+
 
 
 function configPulseAudioOnHost() {

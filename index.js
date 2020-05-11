@@ -169,7 +169,13 @@ Setting file "${file}" didn't exist so created one with default values.
       case 'sshfs-unmount':
         await sshfsUnmount(lxcContName, 
           settings.shared, params, logStreams,
-          process.argv.slice(argOff));
+          process.argv.slice(argOff)).then(
+          ()=>{ console.log(`DEBUG: sshfsUnmount returned success`);},
+          (e)=>{ 
+            console.log(`DEBUG: sshfsUnmount return error: ${e.message}`);
+            throw e;
+          }
+        );
         break;
         // the following is for case when Xephyr is being used
         // case 'clip-to-cont':
