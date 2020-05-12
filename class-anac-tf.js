@@ -4,7 +4,7 @@ const { ParamsDefault } = require('./class-defs.js');
 
 class ParamsAnacTf extends ParamsDefault {
   constructor(tz,phoneHomePort)  {
-    super('tensorflow-jupyter',tz);
+    super('anac-tf',tz);
     this.phoneHome.port = phoneHomePort;
     let opts = this.postInitScript.cmdOpts;
     opts.setStdinToText(`\

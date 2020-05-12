@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 
+
 class sshCmdAsync_opts {
   constructor(){
     this.ssh="ssh";

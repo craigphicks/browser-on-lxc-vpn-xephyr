@@ -17,7 +17,7 @@
       "type": "node",
       "request": "launch",
       "name": "default",
-      "args":[ "init", "dflt"],
+      "args":[ "create-ssh-config-lxc"],
       "program": "${workspaceFolder}/index.js"
     },
     {

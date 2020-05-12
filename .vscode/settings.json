@@ -1,3 +1,8 @@
 {
-  "debug.node.autoAttach": "on"
+  "debug.node.autoAttach": "on",
+  "remote.SSH.enableAgentForwarding": false,
+  "remote.SSH.enableDynamicForwarding": false,
+  "remote.SSH.defaultExtensions": [
+    "Python"
+  ]
 }

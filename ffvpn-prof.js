@@ -161,6 +161,53 @@ async function runPostInitScript(name,params, logStreams) {
   await sshCmdAsync(params, contip, logStreams, params.postInitScript.cmdOpts);  
   console.log("<<<runPostInitScript()");
 }
+async function runServe2(name,shared, params, argsIn) {
+  console.log(">>>runServe()");
+  let doLog = (argsIn.indexOf('--log')>=0);
+  let serveId='default';
+  if (argsIn && argsIn.length && argsIn[0][0]!='-'){
+    serveId = argsIn[0];
+  }
+  if (Object.keys(params.serveScripts).indexOf(serveId)<0)
+    throw Error(`Found no serveScript for ${name} named ${serveId}`);
+  let opts = params.serveScripts[serveId].cmdOpts;
+  const contip = getContainerIp4Address(name);
+  let stdio = ['pipe','ignore','ignore'];
+  if (doLog){
+    let datestr=(new Date()).toISOString();
+    for (const i of [[1,'out'],[2,'err']]){
+      await new Promise((res,rej)=>{
+        stdio[i[0]]=fs.createWriteStream(
+          shared.logdir+`/${name}-serve-${serveId}-${i[1]}-${datestr}.log`)
+          .on('open',res).on('error',rej);
+      });
+    }
+  }
+  if (opts.stdin.isFilename)
+    stdio[0]=fs.createReadStream(opts.stdin.text);
+  let args = shared.sshArgs.args
+    .concat(opts.addSshArgs)
+    .concat(["-i", `${params.sshKeyFilename}`])
+    .concat([`${params.contUsername}@${contip}`])
+    .concat(opts.remoteCmd);
+  let cmdlogstr = [ opts.ssh ].concat(args).join(' ');
+  console.log(cmdlogstr);
+  if (doLog){
+    stdio[1].write(cmdlogstr+'/n');
+    stdio[2].write(cmdlogstr+'/n');
+  }
+
+  return await new Promise ((resolve,reject)=>{
+    let proc=spawn(opts.ssh, args,{stdio:stdio,detached:true})
+      .on('error',reject)
+      .on('exit',resolve)
+      .on('close',resolve);
+    if (!opts.stdin.isFilename)
+      proc.stdin.write(opts.stdin.text)
+    // eslint-disable-next-line no-empty
+    setTimeout(()=>{try{proc.unref();}catch(e){}},1000);
+  });
+}
 async function runServe(name,params,logStreams, args) {
   console.log(">>>runServe()");
   let serveId='default';
@@ -253,11 +300,17 @@ function containerExists(lxcContName){
 }
 
 function getContainerIp4Address(lxcContName){
-  return JSON.parse(syscmd(`lxc list --format json`))
-    .find(c=>c.name==lxcContName)
-    .state.network.eth0.addresses
-    .find(a=>a.family=='inet')
-    .address;
+  let cont = JSON.parse(syscmd(`lxc list --format json`))
+    .find(c=>c.name==lxcContName);
+  if (!cont)
+    throw Error(`no lxc container with {name:${lxcContName}}`);
+  try {
+    let ip=cont.state.network.eth0.addresses
+      .find(a=>a.family=='inet').address;
+    return ip;
+  } catch(e) {
+    throw Error(`lxc container '${lxcContName}' has no ip4 address`);
+  }
 }
 
 //   let overrideContFn = `/etc/systemd/system/openvpn-client@.service.d/override.conf`;
@@ -438,7 +491,7 @@ async function waitPhoneHome(phoneHomeToAddr, phoneHomePort){
 //   return p;
 // })();
 
-async function initialize(lxcContName, params, logStreams, args) {
+async function initialize(lxcContName, settings, params, logStreams, args) {
   console.log(">>>initialize()");
   let noPostInit=false, noServe=false;
   if (args) {
@@ -539,6 +592,8 @@ async function initialize(lxcContName, params, logStreams, args) {
     await runPostInitScript(lxcContName,params,logStreams);
   if (!noServe)
     await runServe(lxcContName,params,logStreams);
+
+  createSshConfigLxc(settings); 
   console.log("<<<intialize()");
 }
 
@@ -816,9 +871,7 @@ async function sshfsUnmount(lxcContName, shared, params, logStreams){
   });
 }
 
-
-
-
+// can also be done dynamically with pacman or something - that may be better?
 function configPulseAudioOnHost() {
   //set pulseaudio to accept audio from host
   //let networkInfo = getNetworkInfo();
@@ -837,6 +890,25 @@ function configPulseAudioOnHost() {
   syscmd(`pulseaudio --kill`);
 }
 
+function createSshConfigLxc(settings){
+  let text = '';
+  let list = JSON.parse(syscmd(`lxc list --format json`));
+  for (const c of list){
+    if (Object.keys(settings).indexOf(c.name)<0)
+      continue;
+    let params = settings[c.name];
+    let contip4;
+    try{ contip4 = getContainerIp4Address(c.name); }
+    catch(e){ continue; }
+    text += `\
+Host ${c.name}
+    HostName ${contip4}
+    User ${params.contUsername}
+    IdentityFile ${params.sshKeyFilename}
+`;
+    fs.writeFileSync(process.env.HOME+'/.ssh/config-lxc',text,{mode:0o644});
+  }
+}
 
 // function notify_send(title, msg){
 // 	title = title.replace(/"/g, '\\"');
@@ -911,11 +983,12 @@ exports.makeUfwRule = makeUfwRule;
 exports.getNetworkInfo = getNetworkInfo;
 exports.runPostInitScript = runPostInitScript;
 exports.runServe = runServe;
+exports.runServe2 = runServe2;
 exports.runTestServe = runTestServe;
 exports.containerExists = containerExists;
 exports.sshfsMount = sshfsMount;
 exports.sshfsUnmount = sshfsUnmount;
-
+exports.createSshConfigLxc=createSshConfigLxc;
 // exports.createProfile =  createProfile
 // exports.syscmd = syscmd
 // exports.getContainerIp4Address = getContainerIp4Address

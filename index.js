@@ -4,7 +4,7 @@ const fs = require('fs');
 const { LogStreams } = require('./class-defs.js');
 const { initialize, 
   runPostInitScript,
-  runServe,
+  runServe,runServe2,
   runTestServe,
   makeUfwRule,
   getNetworkInfo,
@@ -13,6 +13,7 @@ const { initialize,
   containerExists,
   sshfsMount,
   sshfsUnmount,
+  createSshConfigLxc
 } = require('./ffvpn-prof.js');
 
 
@@ -106,6 +107,13 @@ Setting file "${file}" didn't exist so created one with default values.
     settings = readSettingFile(file);
   }
 
+  switch (cmd) {
+  case 'create-ssh-config-lxc':
+    createSshConfigLxc(settings);
+    return;
+  }
+  // fall through to other commands
+
   if (!lxcContName){
     if (Object.keys(settings).length==1)
       lxcContName = Object.keys(settings)[0];
@@ -132,7 +140,7 @@ Setting file "${file}" didn't exist so created one with default values.
       switch (cmd){
       case 'init':
         await initialize(lxcContName, 
-          params, logStreams,
+          settings, params, logStreams,
           process.argv.slice(argOff));
         break;
       case 'post-init':
@@ -146,16 +154,19 @@ Setting file "${file}" didn't exist so created one with default values.
           process.argv.slice(argOff));
         break;
       case 'serve':
-        await runServe(lxcContName, 
-          params, logStreams,
+        await runServe2(lxcContName, 
+          settings.shared, params, 
           process.argv.slice(argOff));
+        // await runServe(lxcContName, 
+        //   params, logStreams,
+        //   process.argv.slice(argOff));
         break;
       case 'post-init-serve':
         await runPostInitScript(lxcContName, 
           params, logStreams,
           process.argv.slice(argOff));
-        await runServe(lxcContName, 
-          params, logStreams,
+        await runServe2(lxcContName, 
+          settings.shared, params, 
           process.argv.slice(argOff));
         break;
       case 'auto-ufw-rule':
