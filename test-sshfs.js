@@ -8,8 +8,8 @@ async function mount() {
   await new Promise((res,rej)=>{sshfsErrLog.on('error',rej).on('open',res);});
   let args = ['-o', 'sshfs_debug', '-d', '-o', 'UserKnownHostsFile=/dev/null', '-o', 
     'StrictHostKeyChecking=no', '-o', 'idmap=user', '-o', 'reconnect', '-o', 
-    'IdentityFile=/home/craig/.ssh/to-tensorflow-jupyter', 'ubuntu@10.64.64.138:', 
-    '/home/craig/mnt/tensorflow-jupyter'
+    'IdentityFile=/home/craig/.ssh/to-sagemath-v9', 'ubuntu@10.64.64.75:', 
+    '/home/craig/mnt/sagemath-v9'
   ];
   let stdio = [ 'ignore', 'ignore', sshfsErrLog ];
   let proc=child_process.spawn('sshfs',args,{ stdio: stdio, detach:true });   
@@ -28,34 +28,38 @@ async function mount() {
       console.log('close event');
       resolve();
     });
-    setTimeout(()=>{proc.unref();},1000); // <- disappears here when 'sshfs ...' succeeds.
+    //    setTimeout(()=>{
+    proc.unref();
+    resolve();
+    //    },1000); // <- disappears here when 'sshfs ...' succeeds.
   });
 }
 
 async function unmount() {
   let args = [
-    '-u','/home/craig/mnt/tensorflow-jupyter'
+    '-u','/home/craig/mnt/sagemath-v9'
   ];
-  let stdio = [ 'ignore', 'pipe', 'pipe' ];
-  let proc=child_process.spawn('fusermount',args,{ stdio: stdio, detached:true });   
+  let stdio = [ 'ignore', 'inherit', 'inherit' ];
+  let proc=child_process.spawn('fusermount',args,{ stdio: stdio, detached:false });
   let procPromise = new Promise((resolve, reject)=>{
     proc.on('error',(e)=>{
       reject(e);
-    }).on('exit',(code,signal)=>{
-      if (code || signal) 
-        reject(new Error(`unmount code(${code}), signal(${signal})`));
+    }).on('close',(code,signal)=>{
+      if (code) 
+        reject(new Error(`on close: code(${code}), signal(${signal})`));
       resolve();
     });
   });
-  let stdoutPromise = new Promise((resolve,reject)=>{
-    proc.stdout.pipe(process.stdout, {end:false})
-      .on('error',reject).on('end',resolve);
-  });
-  let stderrPromise = new Promise((resolve,reject)=>{
-    proc.stderr.pipe(process.stderr, {end:false})
-      .on('error',reject).on('end',resolve);
-  });
-  return await Promise.all([procPromise,stdoutPromise,stderrPromise]);
+  // let stdoutPromise = new Promise((resolve,reject)=>{
+  //   proc.stdout.pipe(process.stdout, {end:false})
+  //     .on('error',reject).on('end',resolve);
+  // });
+  // let stderrPromise = new Promise((resolve,reject)=>{
+  //   proc.stderr.pipe(process.stderr, {end:false})
+  //     .on('error',reject).on('end',resolve);
+  // });
+  return await procPromise;
+  //return await Promise.all([procPromise,stdoutPromise,stderrPromise]);
 }
 
 async function sub() {

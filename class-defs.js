@@ -7,7 +7,7 @@ function sshConfigFileArgs(){
   return ['-F', `${process.env.HOME}/.ssh/config-lxc`];
 }
 function sshXDisplayArgs(){
-  return ['-Y'];
+  return ['-X'];
 }
 function sshAudioArgs(){
   return ['-R',  '44713:localhost:4713'];
@@ -22,14 +22,15 @@ class SpawnCmdParams {
     }, //code checks for filename first
     opts={
       detached:false,
-      noErrorOnCmdNonZeroReturn:false
-    }
+      noErrorOnCmdNonZeroReturn:false,
+      assignToEnv:{}
+    },
   )
   {
     this.prog=prog;
     this.args=args;
     this.stdin=stdin;
-    this.opts=opts;    
+    this.opts=opts;
   }
 }
 
@@ -53,8 +54,11 @@ class SpawnCmd {
       detached:false,
       //outStream:null,
       //errStream:null,
-      noErrorOnCmdNonZeroReturn:false
-    }
+      noErrorOnCmdNonZeroReturn:false,
+      logFunction:console.log.bind(console),
+      logStream:null
+    },
+    passThroughOpts={}
   ){
     this.prog=prog;
     this.args=args;
@@ -65,58 +69,69 @@ class SpawnCmd {
     //this.outStream=opts.outStream;
     //this.errStream=opts.errStream;
     this.noErrorOnCmdNonZeroReturn=opts.noErrorOnCmdNonZeroReturn;
+    this.logFunction=opts.logFunction;
+    this.logStream=opts.logStream;
+    this.passThroughOpts=passThroughOpts;
   }
-  async setFromParams(spawnCmdParamsIn,stdioOverrides=null){
+  static async setFromParams(spawnCmdParamsIn,stdioOverrides=null){
     function waitOpen(h){
       return new Promise((resolve,reject)=>{
         h.on('open',resolve)
           .on('error',(e)=>{reject(e);});
       });
     }
-    let spawnCmdParams = JSON.parse(JSON.stringify(spawnCmdParamsIn));
+    let that = new SpawnCmd();
+    let spawnCmdParams = Object.assign({},spawnCmdParamsIn); 
+    //JSON.parse(JSON.stringify(spawnCmdParamsIn));
     spawnCmdParams.stdio=[
       spawnCmdParamsIn.stdin,
       spawnCmdParamsIn.stdout, // usually undefined
       spawnCmdParamsIn.stderr, // usually undefined
     ];
-    this.prog=spawnCmdParams.prog;
-    this.args=spawnCmdParams.args;
-    this.detached=spawnCmdParams.opts.detached;
-    this.noErrorOnCmdNonZeroReturn=spawnCmdParams.opts.noErrorOnCmdNonZeroReturn;
+    that.prog=spawnCmdParams.prog;
+    that.args=spawnCmdParams.args;
+    that.detached=spawnCmdParams.opts.detached;
+    that.noErrorOnCmdNonZeroReturn=spawnCmdParams.opts.noErrorOnCmdNonZeroReturn;
+    // currently only adds or replaces keys, cannot remove keys.
+    if (spawnCmdParams.opts.assignToEnv 
+      && Object.keys(spawnCmdParams.opts.assignToEnv).length){
+      let newEnv = Object.assign({},process.env);
+      that.passThroughOpts.env = Object.assign(newEnv,spawnCmdParams.opts.assignToEnv);
+    }
     //if (stdioOverrides) 
-    //  this.stdio=stdioOverrides;
+    //  that.stdio=stdioOverrides;
     //else
-    this.stdio.args=['ignore','ignore','ignore'];
-    if (!spawnCmdParams.stdio)
-      ;
-    else if (spawnCmdParams.stdio=='inherit')
-      this.stdio=['inherit','inherit','inherit'];
+    that.stdio.args=['ignore','ignore','ignore'];
+    //if (!spawnCmdParams.stdio) // always false now
+    //  ;
+    //else if (spawnCmdParams.stdio=='inherit') // always false now
+    //  that.stdio=['inherit','inherit','inherit'];
     {
-      this.stdio.after=[null,null,null];
+      that.stdio.after=[null,null,null];
       for (const i of [0,1,2]){
-        if (stdioOverrides.args&&stdioOverrides.args[i]){
-          this.stdio.args[i]=stdioOverrides.args[i];
-          //Object.assign(this.stdio.args[i],stdioOverrides.args[i]);
+        if (stdioOverrides&&stdioOverrides.args&&stdioOverrides.args[i]){
+          that.stdio.args[i]=stdioOverrides.args[i];
+          //Object.assign(that.stdio.args[i],stdioOverrides.args[i]);
           if (stdioOverrides.after&&stdioOverrides.after[i])
-            this.stdio.after[i]=stdioOverrides.after[i];
-            //Object.assign(this.stdio.after[i],stdioOverrides.after[i]);
+            that.stdio.after[i]=stdioOverrides.after[i];
+            //Object.assign(that.stdio.after[i],stdioOverrides.after[i]);
         }
         else if (!spawnCmdParams.stdio[i] || spawnCmdParams.stdio[i]=='ignore')
           ;
         else if (spawnCmdParams.stdio[i]=='inherit')
-          this.stdio[0]='inherit';
+          that.stdio[0]='inherit';
         else if (spawnCmdParams.stdio[i].filename && spawnCmdParams.stdio[i].filename.length){
           let stream= (i==0?
             fs.createReadStream(spawnCmdParams.stdio[0].filename,'utf8')
             : fs.createWriteStream(spawnCmdParams.stdio[0].filename,'utf8'));  
-          this.stdio.args[0]= await waitOpen(stream);          
+          that.stdio.args[0]= await waitOpen(stream);          
         } else if (i==0 && spawnCmdParams.stdio[0].text && spawnCmdParams.stdio[0].text.length){
-          this.stdio.after[0]=spawnCmdParams.stdio[0].text;
-          this.stdio.args[0]='pipe';
+          that.stdio.after[0]=spawnCmdParams.stdio[0].text;
+          that.stdio.args[0]='pipe';
         }
       }
     }
-    return this;
+    return that;
   }
   makeCmdLogStr(){
     let s = (this.stdio[0]) ? '<pipe input> | ' : '';
@@ -128,9 +143,19 @@ class SpawnCmd {
     ); 
   }
   async call(){
+    async function log_(m){
+      if (this.logFunction)
+        await this.logFunction(m);
+      if (this.logStream)
+        await new Promise((res)=>{
+          let cb=()=>{res();};
+          this.logStream.write(m,cb);
+        });
+    }
+    let log = log_.bind(this);
     if (!this.prog)
       throw this.makeError('No program name');
-    let stdio=null;
+    let stdio='pipe';
     if (!this.stdio.args)
       stdio='pipe';
     else if (typeof this.stdio.args == 'string')
@@ -148,23 +173,33 @@ class SpawnCmd {
     // }
     {
       let logstr=this.makeCmdLogStr();
-      console.log(logstr);
-      //if (stdio[1]) stdio[1].write(logstr);
-      //if (stdio[2]) stdio[2].write(logstr);
+      if (this.stdio
+        && this.stdio.after
+        && this.stdio.after[0]
+        && typeof this.stdio.after[0]=='string')
+        logstr += `\nSTART INPUT SCRIPT:\n${this.stdio.after[0]}END INPUT SCRIPT`;
+      await log(logstr);
     }
     let proc=null;
+    let spawnOpts = Object.assign({},this.passThroughOpts);
+    spawnOpts.detached = this.detached; // historical back compat
+    spawnOpts.stdio = stdio;
     let procPromise = new Promise((resolve, reject)=>{
       proc=child_process.spawn(
-        this.prog, this.args, {stdio:stdio, detached:this.detached} 
+        this.prog, this.args, 
+        spawnOpts 
       )
-        .on('error', (e)=>{
+        .on('error', async (e)=>{
+          try {await log(e.message);}
+          // eslint-disable-next-line no-empty
+          catch(e){}
           reject(this.makeError(e.message));
         })
-        .on('exit',(code,signal)=>{
-          console.log(`on exit, code=${code}, signal=${signal}`);
+        .on('exit', async (code,signal)=>{
+          await log(`on exit, code=${code}, signal=${signal}`);
         })
-        .on('close',(code,signal)=>{
-          console.log(`on close, code=${code}, signal=${signal}`);
+        .on('close', async (code,signal)=>{
+          await log(`on close, code=${code}, signal=${signal}`);
           if (code==0 || this.noErrorOnCmdNonZeroReturn)
             resolve();
           else
@@ -186,29 +221,9 @@ class SpawnCmd {
       if (this.detached){
         proc.unref();
         resolve();
-        // setTimeout(()=>{ 
-        //   try { 
-        //     proc.unref();
-        //     resolve();
-        //   }
-        //   catch(e){}
-        // }, 0);
       }
-    });
-    
+    });    
     return await procPromise;
-    // let unrefProm=null;
-    // if (this.detached)
-    //   unrefProm=new Promise((resolve,reject)=>{
-    //     setTimeout(()=>{
-    //       try{
-    //         proc.unref();
-    //       // eslint-disable-next-line no-empty
-    //       }catch(e){}
-    //       resolve();
-    //     },1);
-    // });
-    // return await Promise.all(procPromise,unrefProm);
   }
 } // class SpawnCmd
 

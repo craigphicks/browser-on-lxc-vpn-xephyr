@@ -1,8 +1,10 @@
 'strict';
 const { ParamsDefault } = require('./class-defs.js');
-const { ParamsSagemath_v8, ParamsSagemath_v9 } = require('./class-sagemath.js');
-const { ParamsTensorflowJupyter } = require('./class-tensorflow-jupyter.js');
+//const { ParamsSagemath_v8, ParamsSagemath_v9 } = require('./class-sagemath.js');
+const { ParamsSagemath_v9 } = require('./class-sagemath.js');
+//const { ParamsTensorflowJupyter } = require('./class-tensorflow-jupyter.js');
 const { ParamsFirefox} = require('./class-firefox.js');
+const { ParamsFfNcb} = require('./class-ff-ncb.js');
 const { ParamsAnacTf } = require('./class-anac-tf.js');
 const fs = require('fs');
 
@@ -40,13 +42,22 @@ class DefaultSettings {
             args : [
               '-u',
             ],
-          } 
+          },
+          //   "xephyr": Xephyr -ac -screen 1920x1200 -br -reset -zap :2
+          xephyrArgs: {
+            prog: 'Xephyr',
+            args:[
+              '-ac', '-screen', '1920x1200', '-br', '-reset', '-zap', ':2'
+            ]
+          }
+
         },
         "default" : new ParamsDefault("default",tz,3000),
         "firefox" : new ParamsFirefox(tz,3010),
-        "sagemath-v8" : new ParamsSagemath_v8(tz,3020),
+        "ff-ncb" : new ParamsFfNcb(tz,3015),
+        //"sagemath-v8" : new ParamsSagemath_v8(tz,3020),
         "sagemath-v9" : new ParamsSagemath_v9(tz,3025),
-        "tensorflow-jupyter" : new ParamsTensorflowJupyter(tz,3030),
+        //"tensorflow-jupyter" : new ParamsTensorflowJupyter(tz,3030),
         "anac-tf" : new ParamsAnacTf(tz,3040),
       });
   }

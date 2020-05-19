@@ -4,6 +4,7 @@ const fs = require('fs');
 const { LogStreams } = require('./class-defs.js');
 const { initialize, 
   runPostInitScript,
+  runPostInitScript2,
   runServe,runServe2,runServe3,
   runTestServe,
   makeUfwRule,
@@ -14,8 +15,10 @@ const { initialize,
   sshfsMount,
   sshfsUnmount,
   rsyncBackup,
-  gitRestore,
-  createSshConfigLxc
+  gitRestore, gitPush,
+  createSshConfigLxc,
+  runXephyr,
+  testEnv,
 } = require('./ffvpn-prof.js');
 
 
@@ -113,6 +116,12 @@ Setting file "${file}" didn't exist so created one with default values.
   case 'create-ssh-config-lxc':
     createSshConfigLxc(settings);
     return;
+  case 'xephyr':
+    await runXephyr(settings.shared,logStreams,process.argv.slice(argOff));
+    return;
+  case 'test-env':
+    await testEnv();
+    return;
   }
   // fall through to other commands
 
@@ -164,14 +173,14 @@ Setting file "${file}" didn't exist so created one with default values.
         //   process.argv.slice(argOff));
         break;
       case 'post-init-serve':
-        await runPostInitScript(lxcContName, 
+        await runPostInitScript2(lxcContName, 
           params, logStreams,
           process.argv.slice(argOff));
         await runServe2(lxcContName, 
           settings.shared, params, 
           process.argv.slice(argOff));
         break;
-      case 'auto-ufw-rule':
+      case 'show-ufw-rule':
         console.log(makeUfwRule(getNetworkInfo(params)));
         break;
       case 'sshfs-mount':
@@ -183,16 +192,12 @@ Setting file "${file}" didn't exist so created one with default values.
         await sshfsUnmount(lxcContName, 
           settings.shared, params, logStreams,
           process.argv.slice(argOff));
-        // .then(
-        //   ()=>{ console.log(`DEBUG: sshfsUnmount returned success`);},
-        //   (e)=>{ 
-        //     console.log(`DEBUG: sshfsUnmount return error: ${e.message}`);
-        //     throw e;
-        //   }
-        // );
         break;
       case 'git-restore':
         await gitRestore(lxcContName,settings.shared,params);
+        break;
+      case 'git-push':
+        await gitPush(lxcContName,settings.shared,params);
         break;
         // the following is for case when Xephyr is being used
         // case 'clip-to-cont':
@@ -254,6 +259,7 @@ siggedMain()
   })
   .catch(e => {
     //process.exitCode=1;
+    console.error("FAIL/EXIT detail",e);
     console.error("FAIL/EXIT",e.message);
     process.exit(1);
   })	
