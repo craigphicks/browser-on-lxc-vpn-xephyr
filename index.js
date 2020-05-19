@@ -4,7 +4,7 @@ const fs = require('fs');
 const { LogStreams } = require('./class-defs.js');
 const { initialize, 
   runPostInitScript,
-  runServe,runServe2,
+  runServe,runServe2,runServe3,
   runTestServe,
   makeUfwRule,
   getNetworkInfo,
@@ -13,6 +13,8 @@ const { initialize,
   containerExists,
   sshfsMount,
   sshfsUnmount,
+  rsyncBackup,
+  gitRestore,
   createSshConfigLxc
 } = require('./ffvpn-prof.js');
 
@@ -154,7 +156,7 @@ Setting file "${file}" didn't exist so created one with default values.
           process.argv.slice(argOff));
         break;
       case 'serve':
-        await runServe2(lxcContName, 
+        await runServe3(lxcContName, 
           settings.shared, params, 
           process.argv.slice(argOff));
         // await runServe(lxcContName, 
@@ -180,13 +182,17 @@ Setting file "${file}" didn't exist so created one with default values.
       case 'sshfs-unmount':
         await sshfsUnmount(lxcContName, 
           settings.shared, params, logStreams,
-          process.argv.slice(argOff)).then(
-          ()=>{ console.log(`DEBUG: sshfsUnmount returned success`);},
-          (e)=>{ 
-            console.log(`DEBUG: sshfsUnmount return error: ${e.message}`);
-            throw e;
-          }
-        );
+          process.argv.slice(argOff));
+        // .then(
+        //   ()=>{ console.log(`DEBUG: sshfsUnmount returned success`);},
+        //   (e)=>{ 
+        //     console.log(`DEBUG: sshfsUnmount return error: ${e.message}`);
+        //     throw e;
+        //   }
+        // );
+        break;
+      case 'git-restore':
+        await gitRestore(lxcContName,settings.shared,params);
         break;
         // the following is for case when Xephyr is being used
         // case 'clip-to-cont':
