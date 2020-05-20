@@ -962,71 +962,97 @@ Host ${c.name}
   }
 }
 
-function notify_send(title, msg){
+function notifySend(title, msg){
   title = title.replace(/"/g, '\\"');
   msg = msg.replace(/"/g, '\\"');
   //msg = msg.replace(/'/g, '\\'')
   syscmd(`notify-send "${title}" "${msg}"`);
 }
 
-async function clipToCont(lxcContName){
-  var contip4 = getContainerIp4Address(lxcContName);
+async function clipXfer(fromDispNum,toDispNum){
+  //var contip4 = getContainerIp4Address(lxcContName);
   var clipValue;
   try {
-    clipValue = syscmd('xsel --clipboard --output');
+    clipValue = syscmd(`xsel --display :${fromDispNum} --clipboard --output`);
   } catch(e) {
-    throw 'host clipboard empty';
+    throw 'Display ${fromDispNum} clipboard is empty';
   }
-  let cmd2 = `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no  ubuntu@${contip4} 'xsel --clipboard --input --display :2'`;
+  let cmd2 = 
+  `xsel --display :${toDispNum} --clipboard --input`;
   await new Promise((resolve, reject)=>{		
     // eslint-disable-next-line no-unused-vars
     var proc = exec(cmd2, (error, stdout, stderr) => {
+      //if (stdout) console.log(stdout);
+      //if (stderr) console.log(stderr);
       if (error) {
-        reject(error);
+        reject(Error(`${error.message}`));
       }
       resolve();
     });
     if (!proc.stdin.write(clipValue))
-      reject('pipe write failed');
+      reject(Error('clipToCont(), pipe write failed'));
     proc.stdin.end();
   });					 
 }
 
-async function clipFromCont(lxcContName){
-  var contip4 = getContainerIp4Address(lxcContName);
-  //var clipValue;
-  let cmd1 = `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no  ubuntu@${contip4} 'xsel --clipboard --output --display :2'`;
-  let cmd2 = `xsel --clipboard --input`;
-  let clipVal = syscmd(cmd1);
-  await new Promise((resolve, reject)=>{
-    // eslint-disable-next-line no-unused-vars
-    var proc = exec(cmd2, (error, stdout, stderr) => {
-      if (error) {
-        reject(error);
-      }
-      resolve();
-    });
-    if (!proc.stdin.write(clipVal))
-      reject('pipe write failed');
-    proc.stdin.end();
-  });	
-}
+// async function clipToCont(lxcContName){
+//   var contip4 = getContainerIp4Address(lxcContName);
+//   var clipValue;
+//   try {
+//     clipValue = syscmd('xsel --clipboard --output');
+//   } catch(e) {
+//     throw 'host clipboard empty';
+//   }
+//   let cmd2 = `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no  ubuntu@${contip4} 'xsel --clipboard --input --display :2'`;
+//   await new Promise((resolve, reject)=>{		
+//     // eslint-disable-next-line no-unused-vars
+//     var proc = exec(cmd2, (error, stdout, stderr) => {
+//       if (error) {
+//         reject(error);
+//       }
+//       resolve();
+//     });
+//     if (!proc.stdin.write(clipValue))
+//       reject('pipe write failed');
+//     proc.stdin.end();
+//   });					 
+// }
+
+// async function clipFromCont(lxcContName){
+//   var contip4 = getContainerIp4Address(lxcContName);
+//   //var clipValue;
+//   let cmd1 = `ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no  ubuntu@${contip4} 'xsel --clipboard --output --display :2'`;
+//   let cmd2 = `xsel --clipboard --input`;
+//   let clipVal = syscmd(cmd1);
+//   await new Promise((resolve, reject)=>{
+//     // eslint-disable-next-line no-unused-vars
+//     var proc = exec(cmd2, (error, stdout, stderr) => {
+//       if (error) {
+//         reject(error);
+//       }
+//       resolve();
+//     });
+//     if (!proc.stdin.write(clipVal))
+//       reject('pipe write failed');
+//     proc.stdin.end();
+//   });	
+// }
 
 // eslint-disable-next-line no-unused-vars
-async function clipNotify(to0from1){
-  let f = to0from1 ? clipFromCont : clipToCont;
-  let n = to0from1 ? "clipFromCont" : "clipToCont";
-  let err;
-  await f()
-    .then(()=>{
-      notify_send(n + ": SUCCESS", "");
-    })
-    .catch((e)=>{
-      notify_send(n +  ": FAIL", e.toString());
-      err=e;
-    });
-  if (err) throw err;
-}			  
+// async function clipNotify(to0from1){
+//   let f = to0from1 ? clipFromCont : clipToCont;
+//   let n = to0from1 ? "clipFromCont" : "clipToCont";
+//   let err;
+//   await f()
+//     .then(()=>{
+//       notify_send(n + ": SUCCESS", "");
+//     })
+//     .catch((e)=>{
+//       notify_send(n +  ": FAIL", e.toString());
+//       err=e;
+//     });
+//   if (err) throw err;
+// }			  
 
 async function testEnv(){
   let scp = new SpawnCmdParams(
@@ -1060,6 +1086,8 @@ exports.createSshConfigLxc = createSshConfigLxc;
 exports.rsyncBackup=rsyncBackup;
 exports.runXephyr=runXephyr;
 exports.testEnv=testEnv;
+exports.clipXfer=clipXfer;
+exports.notifySend=notifySend;
 // exports.createProfile =  createProfile
 // exports.syscmd = syscmd
 // exports.getContainerIp4Address = getContainerIp4Address

@@ -18,6 +18,7 @@ const { initialize,
   gitRestore, gitPush,
   createSshConfigLxc,
   runXephyr,
+  clipXfer,notifySend,
   testEnv,
 } = require('./ffvpn-prof.js');
 
@@ -95,10 +96,6 @@ async function main(){
     cmd = process.argv[argOff];
     argOff += 1;
   }
-  if (process.argv.length>argOff){
-    lxcContName = process.argv[argOff];
-    argOff += 1;
-  }
 
 
   let settings; 
@@ -122,8 +119,27 @@ Setting file "${file}" didn't exist so created one with default values.
   case 'test-env':
     await testEnv();
     return;
+  case 'clip-xfer':
+    if (process.argv.length-argOff<2)
+      throw Error('clip-xfer requires two arguments: fromDispNum, toDispNum');
+    {
+      let fromDispNum = process.argv[argOff];
+      let toDispNum = process.argv[argOff+1];
+      argOff+=2;
+      let f = (outcome)=>{
+        notifySend("clipXfer",  `${fromDispNum} => ${toDispNum} ${outcome}`);
+      }; 
+      await clipXfer(fromDispNum,toDispNum)
+        .then(f('SUCCESS'))
+        .catch((e)=>{f(`FAILURE, ${e}`); throw e;});
+    }
+    return;
   }
   // fall through to other commands
+  if (process.argv.length>argOff){
+    lxcContName = process.argv[argOff];
+    argOff += 1;
+  }
 
   if (!lxcContName){
     if (Object.keys(settings).length==1)
@@ -176,7 +192,7 @@ Setting file "${file}" didn't exist so created one with default values.
         await runPostInitScript2(lxcContName, 
           params, logStreams,
           process.argv.slice(argOff));
-        await runServe2(lxcContName, 
+        await runServe3(lxcContName, 
           settings.shared, params, 
           process.argv.slice(argOff));
         break;
