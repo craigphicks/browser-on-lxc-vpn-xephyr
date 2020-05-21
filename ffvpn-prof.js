@@ -1,237 +1,240 @@
 'strict';
-const assert = require('assert').strict;
+//const assert = require('assert').strict;
 //const util = require('util');
-const { execSync, exec, spawn } = require('child_process');
+const { exec, spawn } = require('child_process');
 //exec = util.promisify(exec)
 const fs = require('fs');
 //const url = require('url');
 const yaml = require('js-yaml');
 const http = require('http');
 const { parse } = require('querystring');
-const events = require('events');
-const stream = require(`stream`);
+// const events = require('events');
+// const stream = require(`stream`);
 
 const { 
-  sshCmdAsync_opts, 
-  sshConfigFileArgs,
+//  sshCmdAsync_opts,
+  syscmd,
+  //sshConfigFileArgs,
   SpawnCmd, SpawnCmdParams, 
+  //getNetworkInfo
 } = require('./class-defs.js');
-const { DefaultSettings } = require('./class-default-settings.js');
+const { DefaultSettings } = require('./class-cont-params.js');
 
 //const asyncCmd = require('./async-cmd.js');
 
 
-async function onExitOrError(proc) {
-  return await new Promise((resolve, reject) => {
-    proc.once('exit', (code, signal) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`(onExitOrError) error code [${code}], signal [${signal}]`));
-      }
-    });
-    proc.once('error', (e) => {
-      proc.removeAllListeners(['exit']);
-      reject(new Error(`(onExitOrError) error [${e}]`));
-    });
-  });
-}
+// async function onExitOrError(proc) {
+//   return await new Promise((resolve, reject) => {
+//     proc.once('exit', (code, signal) => {
+//       if (code === 0) {
+//         resolve();
+//       } else {
+//         reject(new Error(`(onExitOrError) error code [${code}], signal [${signal}]`));
+//       }
+//     });
+//     proc.once('error', (e) => {
+//       proc.removeAllListeners(['exit']);
+//       reject(new Error(`(onExitOrError) error [${e}]`));
+//     });
+//   });
+// }
 
-async function readUntilClose(source, writeAsync) {
-  source.on('data', async (data) => {
-    await writeAsync(data.toString('utf8'))
-      .catch((e) => {
-        console.error(`readUntilClose UNEXPECTED ERROR: ${e}`);
-      });
-  });
-  return await new Promise((resolve) => {
-    source.on('error', () => {
-      source.removeAllListeners(['data']);
-      resolve();
-    });
-    source.on('close', () => {
-      source.removeAllListeners(['data']);
-      resolve();
-    });
-  });
-}
+// async function readUntilClose(source, writeAsync) {
+//   source.on('data', async (data) => {
+//     await writeAsync(data.toString('utf8'))
+//       .catch((e) => {
+//         console.error(`readUntilClose UNEXPECTED ERROR: ${e}`);
+//       });
+//   });
+//   return await new Promise((resolve) => {
+//     source.on('error', () => {
+//       source.removeAllListeners(['data']);
+//       resolve();
+//     });
+//     source.on('close', () => {
+//       source.removeAllListeners(['data']);
+//       resolve();
+//     });
+//   });
+// }
 
-async function sshCmdAsync(prms, contip, logStreams, opts) {
-  //const addPath = 'export PATH="$HOME/.local/bin:$PATH"\n'
-  function* genLines(text) {
-    let lines = text.split(/\r\n|\r|\n/); // handles windows, old macs, linux/new macs EOLs
-    for (const line of lines)
-      yield line;
-    return;
-  }
-  const stdArgs = [
-    "-o", "UserKnownHostsFile=/dev/null",
-    "-o", "StrictHostKeyChecking=no",
-    "-i", `${prms.sshKeyFilename}`, `${prms.contUsername}@${contip}`,
-    //"-T", 
-    //"bash", "-s"
-    //"cat"
-  ];
+// async function sshCmdAsync(prms, contip, logStreams, opts) {
+//   //const addPath = 'export PATH="$HOME/.local/bin:$PATH"\n'
+//   function* genLines(text) {
+//     let lines = text.split(/\r\n|\r|\n/); // handles windows, old macs, linux/new macs EOLs
+//     for (const line of lines)
+//       yield line;
+//     return;
+//   }
+//   const stdArgs = [
+//     "-o", "UserKnownHostsFile=/dev/null",
+//     "-o", "StrictHostKeyChecking=no",
+//     "-i", `${prms.sshKeyFilename}`, `${prms.contUsername}@${contip}`,
+//     //"-T", 
+//     //"bash", "-s"
+//     //"cat"
+//   ];
 
-  let remoteCommandsIn = '';
-  let readable = null;
-  if (opts.stdin.text) {
-    if (opts.stdin.isFilename) {
-      remoteCommandsIn = fs.readFileSync(opts.stdin.text, 'utf8');
-      readable = fs.createReadStream(opts.stdin.text, 'utf8');
-      // spawn requires the file be read-ready or it will fail so ... 
-      await events.once(readable, 'readable');
-    } else {
-      remoteCommandsIn = opts.stdin.text;
-      var g = genLines(opts.stdin.text);
-      readable = new stream.Readable({
-        object: true,
-        encoding: 'utf8',
-        //detached:true,
-        //autoDestroy : true,
-        read() {
-          let next = g.next();
-          if (next.done)
-            this.push(null);
-          else
-            this.push(next.value + '\n');
-        }
-      });
-    }
-  }
+//   let remoteCommandsIn = '';
+//   let readable = null;
+//   if (opts.stdin.text) {
+//     if (opts.stdin.isFilename) {
+//       remoteCommandsIn = fs.readFileSync(opts.stdin.text, 'utf8');
+//       readable = fs.createReadStream(opts.stdin.text, 'utf8');
+//       // spawn requires the file be read-ready or it will fail so ... 
+//       await events.once(readable, 'readable');
+//     } else {
+//       remoteCommandsIn = opts.stdin.text;
+//       var g = genLines(opts.stdin.text);
+//       readable = new stream.Readable({
+//         object: true,
+//         encoding: 'utf8',
+//         //detached:true,
+//         //autoDestroy : true,
+//         read() {
+//           let next = g.next();
+//           if (next.done)
+//             this.push(null);
+//           else
+//             this.push(next.value + '\n');
+//         }
+//       });
+//     }
+//   }
 
-  let prog = opts.ssh || "ssh";
-  let args = [];
-  if (opts.addSshArgs && opts.addSshArgs.length)
-    args = opts.addSshArgs;
-  args = args.concat(stdArgs);
-  if (opts.remoteCmd && opts.remoteCmd.length)
-    args = args.concat(opts.remoteCmd);
+//   let prog = opts.ssh || "ssh";
+//   let args = [];
+//   if (opts.addSshArgs && opts.addSshArgs.length)
+//     args = opts.addSshArgs;
+//   args = args.concat(stdArgs);
+//   if (opts.remoteCmd && opts.remoteCmd.length)
+//     args = args.concat(opts.remoteCmd);
 
-  let logText = `\
---- local command line ---
-  ${prog} ${args.join(' ')}
-+++ remote input begin +++
-${remoteCommandsIn || ''}
-+++ remote input end +++
-`;
+//   let logText = `\
+// --- local command line ---
+//   ${prog} ${args.join(' ')}
+// +++ remote input begin +++
+// ${remoteCommandsIn || ''}
+// +++ remote input end +++
+// `;
 
-  if (opts.echoRemoteIn)
-    console.log(logText);
-  await logStreams.writeBoth(logText);
+//   if (opts.echoRemoteIn)
+//     console.log(logText);
+//   await logStreams.writeBoth(logText);
 
-  let proc = spawn(
-    prog, args,
-    {
-      stdio: [
-        readable ? 'pipe' : 'ignore',
-        opts.stdout == 'inherit' ? 'pipe' : 'ignore', // 'inherit' does not allow ...
-        opts.stderr == 'inherit' ? 'pipe' : 'ignore'  // ... waiting for 'close' - so not used
-      ]
-    }
-  );
+//   let proc = spawn(
+//     prog, args,
+//     {
+//       stdio: [
+//         readable ? 'pipe' : 'ignore',
+//         opts.stdout == 'inherit' ? 'pipe' : 'ignore', // 'inherit' does not allow ...
+//         opts.stderr == 'inherit' ? 'pipe' : 'ignore'  // ... waiting for 'close' - so not used
+//       ]
+//     }
+//   );
 
-  if (readable)
-    readable.pipe(proc.stdin);
+//   if (readable)
+//     readable.pipe(proc.stdin);
 
 
-  let stdoutp = null, stderrp = null;
-  if (opts.stdout)
-    stdoutp = readUntilClose(proc.stdout,
-      logStreams.writeOut.bind(logStreams)
-      //process.stdout.write.bind(process.stdout)
-    );
-  if (opts.stderr)
-    stderrp = readUntilClose(proc.stderr,
-      logStreams.writeErr.bind(logStreams)
-      //process.stderr.write.bind(process.stderr)
-    );
+//   let stdoutp = null, stderrp = null;
+//   if (opts.stdout)
+//     stdoutp = readUntilClose(proc.stdout,
+//       logStreams.writeOut.bind(logStreams)
+//       //process.stdout.write.bind(process.stdout)
+//     );
+//   if (opts.stderr)
+//     stderrp = readUntilClose(proc.stderr,
+//       logStreams.writeErr.bind(logStreams)
+//       //process.stderr.write.bind(process.stderr)
+//     );
 
-  // only the outcome of onExitOrError is important
-  let [err, res] = await onExitOrError(proc).then(r => [null, r], e => [e, null]);
-  await Promise.all([stdoutp, stderrp]).catch(e => console.log('ignored error:', e));
-  // because deep inside LogStreams we have been writing lines ending with `\r` we must add `\n'
-  process.stdout.write('\n');
-  process.stderr.write('\n');
-  if (err) throw err;
-  else return res;
-}
+//   // only the outcome of onExitOrError is important
+//   let [err, res] = await onExitOrError(proc).then(r => [null, r], e => [e, null]);
+//   await Promise.all([stdoutp, stderrp]).catch(e => console.log('ignored error:', e));
+//   // because deep inside LogStreams we have been writing lines ending with `\r` we must add `\n'
+//   process.stdout.write('\n');
+//   process.stderr.write('\n');
+//   if (err) throw err;
+//   else return res;
+// }
 
-async function runPostInitScript(name, params, logStreams) {
-  console.log(">>>runPostInitScript()");
-  const contip = getContainerIp4Address(name);
-  await sshCmdAsync(params, contip, logStreams,
-    new sshCmdAsync_opts().setRemoteCommand(['touch', '~/.hushlogin']));
-  await sshCmdAsync(params, contip, logStreams, params.postInitScript.cmdOpts);
-  console.log("<<<runPostInitScript()");
-}
+// async function runPostInitScript(name, params, logStreams) {
+//   console.log(">>>runPostInitScript()");
+//   const contip = getContainerIp4Address(name);
+//   await sshCmdAsync(params, contip, logStreams,
+//     new sshCmdAsync_opts().setRemoteCommand(['touch', '~/.hushlogin']));
+//   await sshCmdAsync(params, contip, logStreams, params.postInitScript.cmdOpts);
+//   console.log("<<<runPostInitScript()");
+// }
 
-async function runPostInitScript2(name, params, logStreams){
-  await new SpawnCmd(
-    'ssh',
-    sshConfigFileArgs().concat([name])
-      .concat(['touch', '~/.hushlogin']),
-    {args:[null,logStreams.outStream(),logStreams.errStream()]}
-  ).call();
+async function runPostInitScript2(name, shared, allParams, params, logStreams){
+  // lxc exec ff-ncb -- sudo -u ubuntu -H touch /home/ubuntu/.hushlogin
+  syscmd(`lxc exec ${name} -- sudo -u ${params.contUsername} -H `
+    + `touch /home/${params.contUsername}/.hushlogin`);
   // two awaits - be careful
+  createSshConfigLxc(shared,allParams); 
   let spawnCmd = await SpawnCmd.setFromParams(
     params.postInitScript.spawnCmdParams,
-    {args:[null,logStreams.outStream(),logStreams.errStream()]}
+    {
+      //args:[null,'inherit','inherit'],
+      after:[null,logStreams.outStream(),logStreams.errStream()],
+    }
   );
   await spawnCmd.call();
 }
 
-async function runServe2(name, shared, params, argsIn) {
-  console.log(">>>runServe2()");
-  let doLog = (argsIn && argsIn.indexOf('--log') >= 0);
-  let serveId = 'default';
-  if (argsIn && argsIn.length && argsIn[0][0] != '-') {
-    serveId = argsIn[0];
-  }
-  if (Object.keys(params.serveScripts).indexOf(serveId) < 0)
-    throw Error(`Found no serveScript for ${name} named ${serveId}`);
-  let opts = params.serveScripts[serveId].cmdOpts;
-  const contip = getContainerIp4Address(name);
-  let stdio = ['pipe', 'ignore', 'ignore'];
-  if (!opts.stdin.text || !opts.stdin.text.length)
-    stdio[0] = 'ignore';
-  if (doLog) {
-    let datestr = (new Date()).toISOString();
-    for (const i of [[1, 'out'], [2, 'err']]) {
-      await new Promise((res, rej) => {
-        stdio[i[0]] = fs.createWriteStream(
-          shared.logdir + `/${name}-serve-${serveId}-${i[1]}-${datestr}.log`)
-          .on('open', res).on('error', rej);
-      });
-    }
-  }
-  if (opts.stdin.isFilename)
-    stdio[0] = fs.createReadStream(opts.stdin.text);
-  let args = shared.sshArgs.args
-    .concat(opts.addSshArgs)
-    .concat(["-i", `${params.sshKeyFilename}`])
-    .concat([`${params.contUsername}@${contip}`])
-    .concat(opts.remoteCmd);
-  let cmdlogstr = [opts.ssh].concat(args).join(' ');
-  console.log(cmdlogstr);
-  if (doLog) {
-    stdio[1].write(cmdlogstr + '/n');
-    stdio[2].write(cmdlogstr + '/n');
-  }
+// async function runServe2(name, shared, params, argsIn) {
+//   console.log(">>>runServe2()");
+//   let doLog = (argsIn && argsIn.indexOf('--log') >= 0);
+//   let serveId = 'default';
+//   if (argsIn && argsIn.length && argsIn[0][0] != '-') {
+//     serveId = argsIn[0];
+//   }
+//   if (Object.keys(params.serveScripts).indexOf(serveId) < 0)
+//     throw Error(`Found no serveScript for ${name} named ${serveId}`);
+//   let opts = params.serveScripts[serveId].cmdOpts;
+//   const contip = getContainerIp4Address(name);
+//   let stdio = ['pipe', 'ignore', 'ignore'];
+//   if (!opts.stdin.text || !opts.stdin.text.length)
+//     stdio[0] = 'ignore';
+//   if (doLog) {
+//     let datestr = (new Date()).toISOString();
+//     for (const i of [[1, 'out'], [2, 'err']]) {
+//       await new Promise((res, rej) => {
+//         stdio[i[0]] = fs.createWriteStream(
+//           shared.logdir + `/${name}-serve-${serveId}-${i[1]}-${datestr}.log`)
+//           .on('open', res).on('error', rej);
+//       });
+//     }
+//   }
+//   if (opts.stdin.isFilename)
+//     stdio[0] = fs.createReadStream(opts.stdin.text);
+//   let args = shared.sshArgs.args
+//     .concat(opts.addSshArgs)
+//     .concat(["-i", `${params.sshKeyFilename}`])
+//     .concat([`${params.contUsername}@${contip}`])
+//     .concat(opts.remoteCmd);
+//   let cmdlogstr = [opts.ssh].concat(args).join(' ');
+//   console.log(cmdlogstr);
+//   if (doLog) {
+//     stdio[1].write(cmdlogstr + '/n');
+//     stdio[2].write(cmdlogstr + '/n');
+//   }
 
-  return await new Promise((resolve, reject) => {
-    let proc = spawn(opts.ssh, args, { stdio: stdio, detached: true })
-      .on('error', reject)
-      .on('exit', resolve)
-      .on('close', resolve);
-    if (!opts.stdin.isFilename && opts.stdin.text && opts.stdin.text.length)
-      proc.stdin.write(opts.stdin.text);
-    // eslint-disable-next-line no-empty
-    setTimeout(() => { try { proc.unref(); } catch (e) { } }, 1000);
-  });
-}
+//   return await new Promise((resolve, reject) => {
+//     let proc = spawn(opts.ssh, args, { stdio: stdio, detached: true })
+//       .on('error', reject)
+//       .on('exit', resolve)
+//       .on('close', resolve);
+//     if (!opts.stdin.isFilename && opts.stdin.text && opts.stdin.text.length)
+//       proc.stdin.write(opts.stdin.text);
+//     // eslint-disable-next-line no-empty
+//     setTimeout(() => { try { proc.unref(); } catch (e) { } }, 1000);
+//   });
+// }
 
-async function runServe3(name, shared, params, argsIn) {
+async function runServe3(name, shared, allParams, params, argsIn) {
   console.log(">>>runServe3()");
   let doLog = (argsIn && argsIn.indexOf('--log') >= 0);
   let serveId = 'default';
@@ -246,11 +249,12 @@ async function runServe3(name, shared, params, argsIn) {
     for (const i of [1,2]) {
       await new Promise((res, rej) => {
         overrideStreams.args[i] = fs.createWriteStream(
-          shared.logdir + `/${name}-serve-${serveId}-${i == 1 ? 'out' : 'err'}-${datestr}.log`)
+          shared.logdir + `/${name}-serve-${serveId=='default'?'':serveId}-${i == 1 ? 'out' : 'err'}-${datestr}.log`)
           .on('open', res).on('error', rej);
       });
     }
   }
+  createSshConfigLxc(shared,allParams);
   let scp = params.serveScripts[serveId].spawnCmdParams;
   let spawnCmd = await SpawnCmd.setFromParams(scp, overrideStreams);
   await spawnCmd.call();
@@ -258,50 +262,37 @@ async function runServe3(name, shared, params, argsIn) {
 }
 
 
-async function runServe(name, params, logStreams, args) {
-  console.log(">>>runServe()");
-  let serveId = 'default';
-  if (args && args.length && args[0][0] != '-') {
-    serveId = args[0];
-  }
-  assert(Object.prototype.hasOwnProperty.call(
-    params.serveScripts, serveId), `Found no serveScript named ${serveId}`);
-  let opts = params.serveScripts[serveId].cmdOpts;
-  const contip = getContainerIp4Address(name);
-  await sshCmdAsync(params, contip, logStreams, opts);
-  console.log("<<<runServe()");
-}
+// async function runServe(name, params, logStreams, args) {
+//   console.log(">>>runServe()");
+//   let serveId = 'default';
+//   if (args && args.length && args[0][0] != '-') {
+//     serveId = args[0];
+//   }
+//   assert(Object.prototype.hasOwnProperty.call(
+//     params.serveScripts, serveId), `Found no serveScript named ${serveId}`);
+//   let opts = params.serveScripts[serveId].cmdOpts;
+//   const contip = getContainerIp4Address(name);
+//   await sshCmdAsync(params, contip, logStreams, opts);
+//   console.log("<<<runServe()");
+// }
 
-async function runTestServe(name, params, logStreams) {
-  //let p = new DefaultParams('test','');
-  const contip = getContainerIp4Address(name);
-  let opts = new sshCmdAsync_opts();
-  opts.setStdinToText(`\
-echo \${argv[@]}
-export PATH=$HOME/.local/bin:$PATH
-echo $PATH
-echo this is from stdout >&1
-echo this is from stderr >&2
-`);
-  //opts.addRPipe(3001,4001);
-  opts.setStdoutToParent();
-  opts.setStderrToParent();
-  await sshCmdAsync(params, contip, logStreams, opts);
-}
+// async function runTestServe(name, params, logStreams) {
+//   //let p = new DefaultParams('test','');
+//   const contip = getContainerIp4Address(name);
+//   let opts = new sshCmdAsync_opts();
+//   opts.setStdinToText(`\
+// echo \${argv[@]}
+// export PATH=$HOME/.local/bin:$PATH
+// echo $PATH
+// echo this is from stdout >&1
+// echo this is from stderr >&2
+// `);
+//   //opts.addRPipe(3001,4001);
+//   opts.setStdoutToParent();
+//   opts.setStderrToParent();
+//   await sshCmdAsync(params, contip, logStreams, opts);
+// }
 
-function syscmd(cmd) {
-  var so = '';
-  try {
-    so = execSync(cmd, { encoding: 'utf-8' });
-    //  console.log("SUCCESS")
-    return so;
-  } catch (e) {
-    console.log('command fail:\n', cmd);
-    console.log('command output:\n', so);
-    console.log('command error:\n', e);
-    throw e;
-  }
-}
 
 
 // function ParamsSagemath(tz){
@@ -326,31 +317,21 @@ function readSettingFile(fn) {
   return yaml.safeLoad(yml);
 }
 
-function getNetworkInfo(prms) {
-  let networkFromCDN = yaml.safeLoad(syscmd(
-    `lxc network show ${prms.lxcContBridgeName}`)).
-    config['ipv4.address'];
-  let networkToAddr = networkFromCDN.split('/')[0];
-  return {
-    fromCDN: networkFromCDN,
-    toAddr: networkToAddr
-  };
-}
 
-function makeUfwRule(params, networkInfo, array=false) {
-  if (!array) {
-    let ret =
-    `sudo ufw allow from ${networkInfo.fromCDN} to ${networkInfo.toAddr} `
-    + `port ${params.phoneHome.port} proto tcp`;
-    return ret;
-  } else {
-    return [
-      'sudo', 'ufw', 'allow', 'from', 
-      `${networkInfo.fromCDN}`, 'to' ,`${networkInfo.toAddr}`,
-      'port', `${params.phoneHome.port}`, 'proto', 'tcp'
-    ];
-  }
-}
+// function makeUfwRule(params, networkInfo, array=false) {
+//   if (!array) {
+//     let ret =
+//     `sudo ufw allow from ${networkInfo.fromCDN} to ${networkInfo.toAddr} `
+//     + `port ${params.phoneHome.port} proto tcp`;
+//     return ret;
+//   } else {
+//     return [
+//       'sudo', 'ufw', 'allow', 'from', 
+//       `${networkInfo.fromCDN}`, 'to' ,`${networkInfo.toAddr}`,
+//       'port', `${params.phoneHome.port}`, 'proto', 'tcp'
+//     ];
+//   }
+// }
 
 function containerExists(lxcContName) {
   return JSON.parse(syscmd(`lxc list --format json`))
@@ -372,17 +353,7 @@ function getContainerIp4Address(lxcContName) {
   }
 }
 
-//   let overrideContFn = `/etc/systemd/system/openvpn-client@.service.d/override.conf`;
-//   let lxcProfileName = `${lxcContName}-prof`;
-//   // create profile
-//   await createProfile(
-//     lxcProfileName, params,
-//     networkInfo, 
-// //    openVPN,
-// //    '[Service]\nLimitNPROC=infinity\n', // openvpn related
-
-
-async function createProfile(profileName, params, networkInfo) {
+async function createProfile(profileName, params) {
 
 
   // deep copy of the read-in parameters
@@ -397,12 +368,12 @@ async function createProfile(profileName, params, networkInfo) {
 
   // phone home is eesential to program operation,
   // and currently it is assumed that container is on local lxcBridge
-  assert(params.phoneHome.autoLXCBridge, "case not implemented");
-  cloudInitJSON.phone_home = {
-    "url": `http://${networkInfo.toAddr}:${params.phoneHome.port}`,
-    "post": "all",
-    "tries": 10
-  };
+  // assert(params.phoneHome.autoLXCBridge, "case not implemented");
+  // cloudInitJSON.phone_home = {
+  //   "url": `http://${networkInfo.toAddr}:${params.phoneHome.port}`,
+  //   "post": "all",
+  //   "tries": 10
+  // };
 
   if (params.openVPN.enable) {
     const overrideFileContent = '[Service]\nLimitNPROC=infinity\n';
@@ -509,70 +480,15 @@ async function waitPhoneHome(phoneHomeToAddr, phoneHomePort) {
   });
 }
 
-/////////////////////////////////////////////////////////////
-// Parameters:
-//const timezone = ""
-//const sshKeyFilename = `/home/${process.env.USER}/.ssh/to-ffvpn`
-//const vpnClientCertFilename = `/home/${process.env.USER}/ffvpn-client.ovpn`
-//const lxcImageSrc = `ubuntu:18.04`
-//const lxcImageAlias = `ub18-im`
-//const lxcContName = `ub18-ffvpn`
-//var lxcContName = `myCont`
-//const lxcCopyProfileName = 'default'
-//const lxcProfileName = 'ffvpn-prof'
-//const lxcContBridgeName = 'lxdbr0'
-//const phoneHomePort = 3000
-// end of Parameters
-//////////////////////////////////////////
 
-
-
-// var params = (()=>{
-//   let p={};
-//   p.timezone = "";
-//   p.sshKeyFilename = `/home/${process.env.USER}/.ssh/to-ffvpn`;
-//   p.vpnClientCertFilename = `/home/${process.env.USER}/ffvpn-client.ovpn`;
-//   p.lxcImageSrc = `ubuntu:18.04`;
-//   p.contUsername = 'ubuntu';
-//   p.lxcImageAlias = `ub18-im`;
-//   p.lxcCopyProfileName = 'default';
-//   p.lxcContBridgeName = 'lxdbr0';
-//   p.phoneHomePort = 3000;
-//   p.initScript = {
-//     filename : "",
-//     text: ""
-//   };
-//   p.serveScript = {
-//     addSshArgs : [],
-//     filename : "",
-//     text: ""
-//   };
-//   return p;
-// })();
-
-async function initialize(lxcContName, settings, params, logStreams, args) {
+async function initialize(lxcContName, shared, allParams, params, logStreams, args) {
   console.log(">>>initialize()");
-  let noPostInit = false, noServe = false, noUfwRule=false;
+  let noPostInit = false, noServe = false;
   if (args) {
     noPostInit = args.indexOf('--nopostinit') >= 0;
     noServe = args.indexOf('--noserve') >= 0;
-    noUfwRule = args.indexOf('--no-ufw-rule') >= 0;
   }
 
-  //let output = await syscmdAsync('echo $PATH');
-  //console.log(output);
-  // let xServerXephyr=true
-  // if (args.indexOf('-nxephyr')>=0)
-  // 	xServerXephyr = false;
-
-
-  // if (xServerXephyr) {
-  // 	cloudInitJSON.packages.push("xdotool");
-  // 	cloudInitJSON.packages.push("xserver-xephyr");
-  // }
-
-  // if name exists delete it
-  //console.log(syscmd(`lxc list --format json`));
   let clist = JSON.parse(syscmd(`lxc list --format json`));
   if (clist.find(c => c.name == lxcContName))
     syscmd(`lxc delete --force ${lxcContName}`);
@@ -593,13 +509,13 @@ async function initialize(lxcContName, settings, params, logStreams, args) {
 
   console.log("KEY done ...");
 
-  const networkInfo = getNetworkInfo(params);
+  //const networkInfo = getNetworkInfo(params);
 
   let lxcProfileName = `${lxcContName}-prof`;
   // create profile
   await createProfile(
     lxcProfileName, params,
-    networkInfo
+    //networkInfo
   );
 
   console.log("PROFILE done ...");
@@ -614,31 +530,41 @@ async function initialize(lxcContName, settings, params, logStreams, args) {
   }
   console.log("IMAGE done ...");
 
-  if (params.phoneHome.ufwRule.enable && !noUfwRule) {
-    assert(params.phoneHome.autoLXCBridge, "case not implemented");
-    let ufwRuleCmd = makeUfwRule(params, networkInfo);
-    console.log(`\
-This program will now try to (interactively) add a UFW RULE 
-for LCX to signal that container initialization has finished:
-  ${ufwRuleCmd}
-To prevent this, you may quit and run again with a trailing 
-'--no-ufw-rule' after the 'init' argument, provided you have 
-already added the rule manually. To view the rule without running 
-this program use the 'show-ufw-rule' command. 
-`);
-    //console.log(syscmd(ufwRuleCmd));
-    let ruleArray=makeUfwRule(params, networkInfo,true);
-    let spawnCmd = new SpawnCmd(ruleArray[0],
-      ruleArray.slice(1),
+  //   if (params.phoneHomeListen
+  //     && params.phoneHomeListen.enable
+  //     && params.phoneHomeListen.addUfwRule 
+  //     && params.phoneHome.addUfwRule.enable 
+  //       && !noUfwRule) {
+  //     console.log(`\
+  // This program will now try to (interactively) add a UFW RULE 
+  // for LCX to signal that container initialization has finished:
+  //   ${params.phoneHomeListen.addUfwRule.rule}
+  // To prevent this, you may quit and run again with a trailing 
+  // '--no-ufw-rule' after the 'init' argument, provided you have 
+  // already added the rule manually. To view the rule without running 
+  // this program use the 'show-ufw-rule' command. 
+  // `);
+  //console.log(syscmd(ufwRuleCmd));
+  //let ruleArray=makeUfwRule(params, networkInfo,true);
+  if (params.phoneHomeListen.addUfwRule.enable){
+    let spawnCmd = new SpawnCmd(
+      params.phoneHomeListen.addUfwRule.ruleArray[0],
+      params.phoneHomeListen.addUfwRule.ruleArray.slice(1),
       { args: 'inherit'}
     );
     spawnCmd.call();
   }
+  //   }
 
   // set up receiver for cloud init phone home signalling cloud init end
-  assert(params.phoneHome.autoLXCBridge, "case not implemented");
-  var promPhoneHome = waitPhoneHome(networkInfo.toAddr, params.phoneHome.port);
-
+  if (params.phoneHomeListen.enable){
+    console.log(`calling waitPhoneHome\
+(toAddr:${params.phoneHomeListen.toAddr},port:${params.phoneHomeListen.port})`);
+    var promPhoneHome = waitPhoneHome(
+      params.phoneHomeListen.toAddr, params.phoneHomeListen.port);
+  } else {
+    throw Error('The case for "phoneHomeListen.enable==false" as not been implemented');   
+  }
   // create the container with cloud init customization
   syscmd(`lxc launch ${params.lxcImageAlias} ${lxcContName} -p ${lxcProfileName}`);
 
@@ -661,63 +587,63 @@ this program use the 'show-ufw-rule' command.
 
     console.log(syscmd(`lxc exec ${lxcContName} -- systemctl start openvpn-client@client`));
   }
-  await createSshConfigLxc(settings);
+  createSshConfigLxc(shared,allParams);
 
   if (!noPostInit)
-    await runPostInitScript2(lxcContName, params, logStreams);
+    await runPostInitScript2(lxcContName, shared, allParams, params, logStreams);
   if (!noServe)
-    await runServe3(lxcContName, settings.shared, params);
+    await runServe3(lxcContName, shared, allParams, params);
 
   console.log("<<<intialize()");
 }
 
-async function browse(lxcContName, params, args) {
-  let XServerXephyr = false;
-  if (args.indexOf('-xephyr') >= 0)
-    XServerXephyr = true;
+// async function browse(lxcContName, params, args) {
+//   let XServerXephyr = false;
+//   if (args.indexOf('-xephyr') >= 0)
+//     XServerXephyr = true;
 
-  let xephyrPassThruArgs = '';
-  if (args.indexOf('-xephyrargs') >= 0) {
-    xephyrPassThruArgs = args[args.indexOf('-xephyrargs') + 1];
-  }
+//   let xephyrPassThruArgs = '';
+//   if (args.indexOf('-xephyrargs') >= 0) {
+//     xephyrPassThruArgs = args[args.indexOf('-xephyrargs') + 1];
+//   }
 
-  // screensize is just for xephyr
-  let SCREENSIZE =
-    syscmd(`xdpyinfo | grep dimensions`).split(' ').find(w => w.match(/^[\d]+x[\d]+$/));
-  if (args.indexOf('-screen') >= 0) {
-    SCREENSIZE = args[args.indexOf('-screen') + 1];
-  } else {
-    console.log(`detected host screensize of ${SCREENSIZE}`);
-  }
+//   // screensize is just for xephyr
+//   let SCREENSIZE =
+//     syscmd(`xdpyinfo | grep dimensions`).split(' ').find(w => w.match(/^[\d]+x[\d]+$/));
+//   if (args.indexOf('-screen') >= 0) {
+//     SCREENSIZE = args[args.indexOf('-screen') + 1];
+//   } else {
+//     console.log(`detected host screensize of ${SCREENSIZE}`);
+//   }
 
-  configPulseAudioOnHost();
+//   configPulseAudioOnHost();
 
-  //const setTimeoutPromise = util.promisify(setTimeout);
-  var contip4 = getContainerIp4Address(lxcContName);
-  if (XServerXephyr) {
-    //		console.log(dropDownFixMsg)
-    let rcmd = `
-Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -zap ${xephyrPassThruArgs} :2 &
-sleep 1
-DISPLAY=:2 openbox &
-DISPLAY=:2 PULSE_SERVER=tcp:localhost:44713 firefox &
-#sleep 3
-#DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 100% 100%
-`;
-    console.log('starting firefox on Xephyr');
-    syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
-      + `-R 44713:localhost:4713 `
-      + `-i ${params.sshKeyFilename}  ubuntu@${contip4} /bin/bash "${rcmd}" &`);
-    console.log('firefox on Xephyr finished');
+//   //const setTimeoutPromise = util.promisify(setTimeout);
+//   var contip4 = getContainerIp4Address(lxcContName);
+//   if (XServerXephyr) {
+//     //		console.log(dropDownFixMsg)
+//     let rcmd = `
+// Xephyr -ac -screen ${SCREENSIZE} -resizeable -br -zap ${xephyrPassThruArgs} :2 &
+// sleep 1
+// DISPLAY=:2 openbox &
+// DISPLAY=:2 PULSE_SERVER=tcp:localhost:44713 firefox &
+// #sleep 3
+// #DISPLAY=:2 xdotool search --onlyvisible --class Firefox windowsize 100% 100%
+// `;
+//     console.log('starting firefox on Xephyr');
+//     syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+//       + `-R 44713:localhost:4713 `
+//       + `-i ${params.sshKeyFilename}  ubuntu@${contip4} /bin/bash "${rcmd}" &`);
+//     console.log('firefox on Xephyr finished');
 
-  } else {  // XServerXephyr == false 
-    syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
-      + `-R 44713:localhost:4713 `
-      + `-i ${params.sshKeyFilename} ubuntu@${contip4} `
-      + `PULSE_SERVER=tcp:localhost:44713 firefox &`);
-    console.log('Firefox started (no Xephyr)');
-  }
-}
+//   } else {  // XServerXephyr == false 
+//     syscmd(`ssh -Y -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no `
+//       + `-R 44713:localhost:4713 `
+//       + `-i ${params.sshKeyFilename} ubuntu@${contip4} `
+//       + `PULSE_SERVER=tcp:localhost:44713 firefox &`);
+//     console.log('Firefox started (no Xephyr)');
+//   }
+// }
 
 function getMountDir(lxcContName,params){
   return params.sshfsMountRoot + '/' + lxcContName;
@@ -764,15 +690,6 @@ async function sshfsMount(lxcContName, shared, params, logStreams, argsIn) {
   let procPromise = new Promise((resolve, reject) => {
     proc.on('error', (e) => {
       reject(e);
-    // }).on('exit', (code, signal) => {
-    //   if (code)
-    //     reject(new Error(`on exit code(${code}), signal(${signal})`));
-    //   if (debug)  
-    //     console.log('exit event');
-    //   resolve();
-    // }).on('disconnect', () => {
-    //   console.log('disconnect event');
-    //   resolve();
     }).on('close', (code, signal) => {
       if (code)
         reject(new Error(`on close code(${code}), signal(${signal})`));
@@ -783,12 +700,6 @@ async function sshfsMount(lxcContName, shared, params, logStreams, argsIn) {
     setTimeout(() => { proc.unref(); }, 1000);
   });
   let parr = [procPromise];
-  // parr.push(new Promise((resolve,reject)=>{
-  //   proc.stdout.on('error',reject).on('end',resolve);
-  // }));
-  // parr.push(new Promise((resolve,reject)=>{
-  //   proc.stderr.on('error',reject).on('end',resolve);
-  // }));
   return await Promise.all(parr).catch(async (e) => {
     await logStreams.writeBoth(`${e}\n`);
     let errtxt = fs.readFileSync(efn).toString();
@@ -904,15 +815,15 @@ async function rsyncBackup(lxcContName, shared, params, logStreams, argsIn){
 }
 
 // eslint-disable-next-line no-unused-vars
-async function runXephyr(shared,logStreams,argsIn){
+async function runXephyr(shared,argsIn){
   // await new SpawnCmd(
   //   shared.xephyrArgs.prog,
   //   shared.xephyrArgs.args,
   //   {args:'ignore'}, {detached:true}
   // ).call();
   let spawnCmdParams = await new SpawnCmdParams(
-    shared.xephyrArgs.prog,
-    shared.xephyrArgs.args,
+    shared.xephyrProg(),
+    shared.xephyrArgs(),
     {}, // => 'ignore' 
     { detached:true } // default logFunction will log to  console
   );
@@ -920,35 +831,37 @@ async function runXephyr(shared,logStreams,argsIn){
   await spawnCmd.call();
 }
 
-// can also be done dynamically with pacman or something - that may be better?
-function configPulseAudioOnHost() {
+function setUserPulseAudioConfigFile() {
+  // can also be done dynamically with pacman or something - that may be better?
   //set pulseaudio to accept audio from host
-  //let networkInfo = getNetworkInfo();
+  let userConfigDir=`/home/${process.env.USER}/.config/pulse`; 
+  let userConfigFn=`${userConfigDir}/default.pa`; 
+  let addContent =
+  `load-module module-native-protocol-tcp port=4713 auth-ip-acl=127.0.0.1\n`;
+  let newContent=`.include /etc/pulse/default.pa\n` + addContent;  
 
-  // audio on host side
-  // create a new ~/.config/pulse/default.pa file
-  let defPa = fs.readFileSync(`/etc/pulse/default.pa`);
-  defPa = defPa +
-    `load-module module-native-protocol-tcp `
-    + `port=4713 auth-ip-acl=127.0.0.1`
-    + `\n`
-  ;
-  fs.mkdirSync(`/home/${process.env.USER}/.config/pulse`, { recursive: true });
-  fs.writeFileSync(`/home/${process.env.USER}/.config/pulse/default.pa`, defPa);
-  // kill pulseaudio, it will load the new config and self reboot
+  if (fs.existsSync(userConfigFn)){
+    console.log(`Adding line:\n${addContent}\nto file:\n${userConfigFn}`);
+    fs.appendFileSync(userConfigFn,`\n${addContent}`,'utf8');
+  }else{
+    console.log(`Creating new file:\n${userConfigFn}\nwith content:\n${addContent}`);
+    fs.mkdirSync(userConfigDir, { recursive: true });
+    fs.writeFileSync(userConfigFn,newContent,'utf8');
+  }
+  // kill pulseaudio, it will load the new config and self restart
   syscmd(`pulseaudio --kill`);
 }
 
-function createSshConfigLxc(settings) {
+function createSshConfigLxc(shared,contParams) {
   let text = `\
   UserKnownHostsFile=/dev/null  
   StrictHostKeyChecking=no
   `;
   let list = JSON.parse(syscmd(`lxc list --format json`));
   for (const c of list) {
-    if (Object.keys(settings).indexOf(c.name) < 0)
+    if (Object.keys(contParams).indexOf(c.name) < 0)
       continue;
-    let params = settings[c.name];
+    let params = contParams[c.name];
     let contip4;
     try { contip4 = getContainerIp4Address(c.name); }
     catch (e) { continue; }
@@ -958,7 +871,7 @@ Host ${c.name}
     User ${params.contUsername}
     IdentityFile ${params.sshKeyFilename}
 `;
-    fs.writeFileSync(process.env.HOME + '/.ssh/config-lxc', text, { mode: 0o644 });
+    fs.writeFileSync(shared.sshConfigLxcFilename, text, { mode: 0o644 });
   }
 }
 
@@ -1069,14 +982,14 @@ exports.writeDefaultSettingFile = writeDefaultSettingFile;
 exports.readSettingFile = readSettingFile;
 exports.initialize = initialize;
 //exports.browse = browse;
-exports.makeUfwRule = makeUfwRule;
-exports.getNetworkInfo = getNetworkInfo;
-exports.runPostInitScript = runPostInitScript;
+//exports.makeUfwRule = makeUfwRule;
+//exports.getNetworkInfo = getNetworkInfo;
+//exports.runPostInitScript = runPostInitScript;
 exports.runPostInitScript2 = runPostInitScript2;
-exports.runServe = runServe;
-exports.runServe2 = runServe2;
+//exports.runServe = runServe;
+//exports.runServe2 = runServe2;
 exports.runServe3 = runServe3;
-exports.runTestServe = runTestServe;
+//exports.runTestServe = runTestServe;
 exports.containerExists = containerExists;
 exports.sshfsMount = sshfsMount;
 exports.sshfsUnmount = sshfsUnmount;
@@ -1085,9 +998,12 @@ exports.gitPush=gitPush;
 exports.createSshConfigLxc = createSshConfigLxc;
 exports.rsyncBackup=rsyncBackup;
 exports.runXephyr=runXephyr;
-exports.testEnv=testEnv;
 exports.clipXfer=clipXfer;
 exports.notifySend=notifySend;
+exports.setUserPulseAudioConfigFile=setUserPulseAudioConfigFile;
+// test function(s)
+exports.testEnv=testEnv;
+
 // exports.createProfile =  createProfile
 // exports.syscmd = syscmd
 // exports.getContainerIp4Address = getContainerIp4Address

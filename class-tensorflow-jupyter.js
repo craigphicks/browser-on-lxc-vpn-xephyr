@@ -1,8 +1,8 @@
 'strict';
 
-const { ParamsDefault } = require('./class-defs.js');
+const { DefaultParams } = require('./class-defs.js');
 
-class ParamsTensorflowJupyter extends ParamsDefault {
+class ParamsTensorflowJupyter extends DefaultParams {
   constructor(tz,phoneHomePort)  {
     super('tensorflow-jupyter',tz);
     this.phoneHome.port = phoneHomePort;

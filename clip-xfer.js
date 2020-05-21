@@ -15,7 +15,7 @@ function notifySend(title, msg){
   }
 }
 
-async function clipXfer(fromDispNum,toDispNum){
+async function clipXferSub(fromDispNum,toDispNum){
   var clipValue;
   let cmd1 = `xsel --display :${fromDispNum} --clipboard --output`;
   let cmd2 = `xsel --display :${toDispNum} --clipboard --input`;
@@ -40,6 +40,14 @@ async function clipXfer(fromDispNum,toDispNum){
   });					 
 }
 
+async function ClipXfer(fromDispNum,toDispNum){
+  let f = (outcome)=>{
+    notifySend("clipXfer",  `${fromDispNum} => ${toDispNum} ${outcome}`);
+  }; 
+  await clipXferSub(fromDispNum,toDispNum)
+    .then(f('SUCCESS'))
+    .catch((e)=>{f(`FAILURE, ${e.message}`); throw e;});
+}
 
 async function main()
 {
@@ -49,12 +57,7 @@ async function main()
   let fromDispNum = process.argv[argOff];
   let toDispNum = process.argv[argOff+1];
   argOff+=2;
-  let f = (outcome)=>{
-    notifySend("clipXfer",  `${fromDispNum} => ${toDispNum} ${outcome}`);
-  }; 
-  await clipXfer(fromDispNum,toDispNum)
-    .then(f('SUCCESS'))
-    .catch((e)=>{f(`FAILURE, ${e.message}`); throw e;});
+  ClipXfer(fromDispNum,toDispNum);
 }
 
 //console.log(process.argv);
@@ -65,3 +68,5 @@ main()
     console.log(e);
     process.exitCode=1;
   });
+
+exports.ClipXfer=ClipXfer;

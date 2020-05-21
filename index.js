@@ -1,28 +1,34 @@
 'strict';
 //const assert = require('assert').strict;
 const fs = require('fs');
-const { LogStreams } = require('./class-defs.js');
+const { LogStreams } = require('./class-log-streams.js');
+const { SharedParams }=require('./class-shared-params.js');
+const { ContParams }=require('./class-cont-params.js');
+const {SpawnCmd}=require('./class-defs.js');
 const { initialize, 
-  runPostInitScript,
+  //runPostInitScript,
   runPostInitScript2,
-  runServe,runServe2,runServe3,
-  runTestServe,
-  makeUfwRule,
-  getNetworkInfo,
-  readSettingFile,
-  writeDefaultSettingFile,
+  //runServe,runServe2,
+  runServe3,
+  //runTestServe,
+  //readSettingFile,
+  //writeDefaultSettingFile,
   containerExists,
   sshfsMount,
   sshfsUnmount,
-  rsyncBackup,
+  //rsyncBackup,
   gitRestore, gitPush,
   createSshConfigLxc,
+  setUserPulseAudioConfigFile,
   runXephyr,
-  clipXfer,notifySend,
+  clipXfer,
   testEnv,
 } = require('./ffvpn-prof.js');
+const {makeUfwRule,getNetworkInfo} = require('./default-params.js');
 
 
+
+const appConfigDir = `${process.env.HOME}/.config/luwp`;
 
 function help(){
 
@@ -80,41 +86,50 @@ Usage:
 async function main(){
   //	console.log(process.argv.length)
   //	console.log(process.argv)
-
-  let cmd, lxcContName, argOff=2;
-
-  let file = `./params.yml`;
-
-  if (process.argv.length>argOff)
-    if (process.argv[argOff]=='--file'){
-      file = process.argv[argOff+1];
-      argOff+=2;
-    }
   
-
-  if (process.argv.length>argOff){
-    cmd = process.argv[argOff];
-    argOff += 1;
+  let lxcContName, argOff=2;
+  
+  let sharedParamsFilename = `${appConfigDir}/shared-params.yml`;
+  let contParamsFilename = `${appConfigDir}/cont-params.yml`;
+  
+  // if (process.argv.length>argOff)
+  //   if (process.argv[argOff]=='--file'){
+  //     file = process.argv[argOff+1];
+  //     argOff+=2;
+  //   }
+  
+  
+  if (!fs.existsSync(appConfigDir)){
+    fs.mkdirSync(appConfigDir,{recursive:true});
   }
-
-
-  let settings; 
-  if (fs.existsSync(file))
-    settings = readSettingFile(file);
-  else {
-    writeDefaultSettingFile(file);
+  
+  if (!fs.existsSync(sharedParamsFilename)){
+    new SharedParams().writeToFile(sharedParamsFilename);
     console.error(`\
-Setting file "${file}" didn't exist so created one with default values.
-`);
-    settings = readSettingFile(file);
+    File "${sharedParamsFilename}" didn't exist so created one with default values.
+    `);
   }
+  var shared = new SharedParams(sharedParamsFilename);
+  if (!fs.existsSync(contParamsFilename)){
+    new ContParams(shared).writeToFile(contParamsFilename);
+    console.error(`\
+    File "${contParamsFilename}" didn't exist so created one.
+    `);
+  }
+  var contParams = new ContParams(shared,contParamsFilename);
 
-  switch (cmd) {
-  case 'create-ssh-config-lxc':
-    createSshConfigLxc(settings);
+  let nextArg;
+  if (process.argv.length>argOff){
+    nextArg = process.argv[argOff];
+    argOff += 1;
+  } else {
+    help();
     return;
+  }
+  
+  switch (nextArg) {
   case 'xephyr':
-    await runXephyr(settings.shared,logStreams,process.argv.slice(argOff));
+    await runXephyr(shared,process.argv.slice(argOff));
     return;
   case 'test-env':
     await testEnv();
@@ -122,110 +137,113 @@ Setting file "${file}" didn't exist so created one with default values.
   case 'clip-xfer':
     if (process.argv.length-argOff<2)
       throw Error('clip-xfer requires two arguments: fromDispNum, toDispNum');
+    await clipXfer(process.argv[argOff],process.argv[argOff+1]);
+    argOff+=2;
+    return;
+  case 'config-ssh':
+    createSshConfigLxc(shared.sshConfigLxcFilename);
+    return;
+  case 'config-pulse-audio':
+    setUserPulseAudioConfigFile();
+    return;
+  case 'show-ufw-rule':
+    console.log(makeUfwRule(getNetworkInfo(),shared.ufwPortRange));
+    return;
+  case 'config-ufw-rule':
     {
-      let fromDispNum = process.argv[argOff];
-      let toDispNum = process.argv[argOff+1];
-      argOff+=2;
-      let f = (outcome)=>{
-        notifySend("clipXfer",  `${fromDispNum} => ${toDispNum} ${outcome}`);
-      }; 
-      await clipXfer(fromDispNum,toDispNum)
-        .then(f('SUCCESS'))
-        .catch((e)=>{f(`FAILURE, ${e}`); throw e;});
-    }
+      let ufwRule = makeUfwRule(getNetworkInfo(),shared.ufwPortRange,true);
+      await new SpawnCmd(ufwRule[0],ufwRule.slice(1),{stdio:'inherit'}).call();
+    } 
     return;
   }
+  
+  
   // fall through to other commands
-  if (process.argv.length>argOff){
-    lxcContName = process.argv[argOff];
-    argOff += 1;
+  lxcContName = nextArg;
+  
+  if (!Object.keys(contParams).includes(lxcContName))
+    throw Error(`could not find parameters for container name ${lxcContName}`);
+
+  console.error(`using container name "${lxcContName}"`);
+
+  if (process.argv.length<=argOff){
+    help();
+    return;
   }
 
-  if (!lxcContName){
-    if (Object.keys(settings).length==1)
-      lxcContName = Object.keys(settings)[0];
-    else if (Object.keys(settings).includes('default'))
-      lxcContName = 'default';
-    else {
-      console.error('ERROR: cannot determine container name uniquely');
-      return;
-    }
-    console.error(`using container name "${lxcContName}"`);
-  }
-  var logStreams=null;
+
+  let cmd = process.argv[argOff];
+  argOff += 1;
+
+  if (cmd!='init' && !containerExists(lxcContName))
+    throw new Error(
+      `lxc container named '${lxcContName}' doesn't exist, must create with 'init' first`);
+  let params = contParams[lxcContName];
+  
   try {
-    if (!cmd)
-      help();
-    else {
-      if (cmd!='init' && !containerExists(lxcContName)){
-        throw new Error(
-          `container named '${lxcContName}' doesn't exist, must create with 'init' first`);
-      }
-      let params = settings[lxcContName];
-      logStreams = new LogStreams(settings.shared.logdir, 
-        `${lxcContName}-out.log`, `${lxcContName}-err.log`);
-      switch (cmd){
-      case 'init':
-        await initialize(lxcContName, 
-          settings, params, logStreams,
-          process.argv.slice(argOff));
-        break;
-      case 'post-init':
-        await runPostInitScript(lxcContName, 
-          params, logStreams,
-          process.argv.slice(argOff));
-        break;
-      case 'test-serve':
-        await runTestServe(lxcContName, 
-          params, logStreams,
-          process.argv.slice(argOff));
-        break;
-      case 'serve':
-        await runServe3(lxcContName, 
-          settings.shared, params, 
-          process.argv.slice(argOff));
-        // await runServe(lxcContName, 
-        //   params, logStreams,
-        //   process.argv.slice(argOff));
-        break;
-      case 'post-init-serve':
-        await runPostInitScript2(lxcContName, 
-          params, logStreams,
-          process.argv.slice(argOff));
-        await runServe3(lxcContName, 
-          settings.shared, params, 
-          process.argv.slice(argOff));
-        break;
-      case 'show-ufw-rule':
-        console.log(makeUfwRule(getNetworkInfo(params)));
-        break;
-      case 'sshfs-mount':
-        await sshfsMount(lxcContName, 
-          settings.shared, params, logStreams,
-          process.argv.slice(argOff));
-        break;
-      case 'sshfs-unmount':
-        await sshfsUnmount(lxcContName, 
-          settings.shared, params, logStreams,
-          process.argv.slice(argOff));
-        break;
-      case 'git-restore':
-        await gitRestore(lxcContName,settings.shared,params);
-        break;
-      case 'git-push':
-        await gitPush(lxcContName,settings.shared,params);
-        break;
-        // the following is for case when Xephyr is being used
-        // case 'clip-to-cont':
-        // 	await clipNotify(0);
-        // 	break;
-        // case 'clip-from-cont':
-        // 	await clipNotify(1);
-        // 	break;
-      default: help();
-      }
+    var logStreams = new LogStreams(shared.logdir, 
+      `${lxcContName}-${cmd}-out.log`, `${lxcContName}-${cmd}-err.log`);
+      
+      
+    switch (cmd){
+    case 'init':
+      await initialize(lxcContName, 
+        shared, contParams, params, logStreams,
+        process.argv.slice(argOff));
+      break;
+    case 'post-init':
+      await runPostInitScript2(lxcContName, 
+        shared, contParams, params, logStreams,
+        process.argv.slice(argOff));
+      break;
+      // case 'test-serve':
+      //   await runTestServe(lxcContName, 
+      //     params, logStreams,
+      //     process.argv.slice(argOff));
+      //   break;
+    case 'serve':
+      await runServe3(lxcContName, 
+        shared, contParams, params, 
+        process.argv.slice(argOff));
+      // await runServe(lxcContName, 
+      //   params, logStreams,
+      //   process.argv.slice(argOff));
+      break;
+      // case 'post-init-serve':
+      //   await runPostInitScript2(lxcContName, 
+      //     params, logStreams,
+      //     process.argv.slice(argOff));
+      //   await runServe3(lxcContName, 
+      //     shared, params, 
+      //     process.argv.slice(argOff));
+      //   break;
+    case 'sshfs-mount':
+      await sshfsMount(lxcContName, 
+        shared, params, logStreams,
+        process.argv.slice(argOff));
+      break;
+    case 'sshfs-unmount':
+      await sshfsUnmount(lxcContName, 
+        shared, params, logStreams,
+        process.argv.slice(argOff));
+      break;
+    case 'git-restore':
+      await gitRestore(lxcContName,shared,params);
+      break;
+    case 'git-push':
+      await gitPush(lxcContName,shared,params);
+      break;
+      // the following is for case when Xephyr is being used
+      // case 'clip-to-cont':
+      // 	await clipNotify(0);
+      // 	break;
+      // case 'clip-from-cont':
+      // 	await clipNotify(1);
+      // 	break;
+    default: help();
     }
   }
+              
   finally {
     if (logStreams)
       await logStreams.close();

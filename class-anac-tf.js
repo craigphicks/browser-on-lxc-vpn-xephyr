@@ -1,12 +1,9 @@
 'strict';
 
 const { 
-  ParamsDefault, 
-  sshConfigFileArgs,
-  sshXDisplayArgs,
-  sshAudioArgs,
   SpawnCmdParams 
 } = require('./class-defs.js');
+const { DefaultParams } = require('./default-params.js');
 
 const postInitScript= `\
 export PATH="$HOME/.local/bin:$PATH"
@@ -29,35 +26,26 @@ jupyter notebook stop 8889 2>&1 >/dev/null
 PULSE_SERVER=tcp:localhost:44713 BROWSER=firefox jupyter notebook || exit 120
 `;
 
-const contName='anac-tf';
-class ParamsAnacTf extends ParamsDefault {
-  constructor(tz,phoneHomePort)  {
-    super(contName,tz);
-    this.phoneHome.port = phoneHomePort;
-    let opts = this.postInitScript.cmdOpts;
-    opts.setStdinToText(postInitScript);
-    opts = this.serveScripts['default'].cmdOpts;
-    opts.addPipeForX11();
-    opts.addRPipe(44713,4713); // only works when pulse audo configured to read 4173 on host
-    opts.setStdinToText(serveScript);
-    ////
+class ParamsAnacTf extends DefaultParams {
+  constructor(contName,shared,phoneHomePort)  {
+    super(contName,shared,phoneHomePort);
     this.postInitScript.spawnCmdParams=new SpawnCmdParams(
-      "ssh", 
-      sshConfigFileArgs().concat([contName]),
+      shared.sshProg(), 
+      shared.sshArgs(contName,true),
       {filename:null,text:postInitScript},
       {detached:false, noErrorOnCmdNonZeroReturn:false}
     );
-    this.serveScripts['default'].spawnCmdParams=new SpawnCmdParams(
-      "ssh", 
-      sshConfigFileArgs()
-        .concat(sshXDisplayArgs())
-        .concat(sshAudioArgs())
-        .concat([contName]),
+    this.serveScripts['default'] = { spawnCmdParams:new SpawnCmdParams(
+      shared.sshProg(), 
+      shared.sshArgs(contName,false),
       {filename:null, text:serveScript},
-      {detached:true, noErrorOnCmdNonZeroReturn:false}
-    );
-    this.rsyncBackups[0].contDir = 'work/';
-    this.rsyncBackups[0].hostDir = `~/lxc-backup/${contName}/work/`;
+      {
+        detached:true, 
+        noErrorOnCmdNonZeroReturn:false,
+      },
+    )};
+    //this.rsyncBackups[0].contDir = 'work/';
+    //this.rsyncBackups[0].hostDir = `~/lxc-backup/${contName}/work/`;
     this.gits = {
       default: {
         repo: 'git@github.com:craigphicks/lxcserv_anac-tf_work.git', 
