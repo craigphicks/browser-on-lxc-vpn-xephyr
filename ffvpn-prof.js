@@ -19,9 +19,17 @@ const {
   //getNetworkInfo
 } = require('./class-defs.js');
 const { DefaultSettings } = require('./class-cont-params.js');
-
+//const stream = require('stream');
 //const asyncCmd = require('./async-cmd.js');
 
+// async function copyStringToFile(str,filename,opts){
+//   let src = stream.Readable.from(str);
+//   let dst = fs.createWriteStream(filename,opts);
+//   await new Promise((resolve,reject)=>{
+//   src.pipe(dst)
+//     .on('err',reject)
+//     .end()})
+// }
 
 // async function onExitOrError(proc) {
 //   return await new Promise((resolve, reject) => {
@@ -168,20 +176,99 @@ const { DefaultSettings } = require('./class-cont-params.js');
 //   console.log("<<<runPostInitScript()");
 // }
 
-async function runPostInitScript2(name, shared, allParams, params, logStreams){
-  // lxc exec ff-ncb -- sudo -u ubuntu -H touch /home/ubuntu/.hushlogin
-  syscmd(`lxc exec ${name} -- sudo -u ${params.contUsername} -H `
-    + `touch /home/${params.contUsername}/.hushlogin`);
-  // two awaits - be careful
+async function runPostInitScript2(name, shared, allParams, params, logStreams, argsIn){
+  console.log('>>>runPostInitScript2');
+
+  let scriptIndex = -1;
+  if (argsIn&&argsIn.includes('--scriptIndex')){
+    scriptIndex=argsIn[argsIn.indexOf('--scriptIndex')+1];
+  }
+  let copyOnly = false;
+  if (argsIn&&argsIn.includes('--copyOnly')){
+    copyOnly=true;
+  }
+
   createSshConfigLxc(shared,allParams); 
-  let spawnCmd = await SpawnCmd.setFromParams(
-    params.postInitScript.spawnCmdParams,
-    {
-      //args:[null,'inherit','inherit'],
-      after:[null,logStreams.outStream(),logStreams.errStream()],
+
+  // lxc exec ff-ncb -- sudo -u ubuntu -H touch /home/ubuntu/.hushlogin
+  sshfsMount(name,shared,params,logStreams);
+
+  let remotefn=(fn)=>{
+    return shared.sshfsMountDir(name)+'/'+fn;
+  };
+
+  syscmd(`touch ${remotefn('.hushlogin')}`);
+
+  
+  let logForCopy=(index, total, cfin)=>{
+    let cf=JSON.parse(JSON.stringify(cfin));
+    if (cf.src.text && cf.src.text.length>40)
+      cf.src.text=cf.src.text.slice(0,37)+'...';
+    cf.dst.filename=remotefn(cf.dst.dir+'/'+cf.dst.filename);
+    console.log(`file write/copy, index:${index} of 0...${total-1}`);
+    console.log(JSON.stringify(cf,2));
+  };
+
+  let aprom=[];
+  if (params.postInitScript.copyFiles){
+    let index=0;
+    for (const cf of params.postInitScript.copyFiles){
+      let dstDir = remotefn(cf.dst.dir);
+      let dstfn = dstDir+'/'+cf.dst.filename;
+      if (!fs.existsSync(dstDir))
+        fs.mkdirSync(dstDir,{mode:0o775, recursive:true});
+      logForCopy(index++,params.postInitScript.copyFiles.length,cf);
+      if (cf.src.text)
+        aprom.push(
+          new Promise((resolve,reject)=>{
+            fs.writeFile(dstfn,
+              cf.src.text,cf.options,
+              (e)=>{if (e) reject(e); else resolve();});}));
+      else if(cf.src.filename){
+        aprom.push(
+          new Promise((resolve,reject)=>{
+            fs.copyFile(cf.src.filename,dstfn,0,
+              (e)=>{
+                if (e) 
+                  reject(e); 
+                else {
+                  let mode=0o666;
+                  if (cf.options.mode)
+                    mode=cf.options.mode;
+                  fs.chmod(dstfn,mode,(e)=>{
+                    if (e) reject(e); else resolve();
+                  }); 
+                }
+              }
+            );
+          })
+        );
+      }
     }
-  );
-  await spawnCmd.call();
+  }
+  await Promise.all(aprom);
+
+  if (copyOnly)
+    return;
+
+  let asc = Array.isArray(params.postInitScript.spawnCmdParams) ?
+    params.postInitScript.spawnCmdParams :
+    [ params.postInitScript.spawnCmdParams ];
+  if (scriptIndex>=0)
+    asc = [asc[scriptIndex]];
+
+  // two awaits - be careful
+  for (const sc of asc){
+    let spawnCmd = await SpawnCmd.setFromParams(
+      sc,
+      {
+      //args:[null,'inherit','inherit'],
+        after:[null,logStreams.outStream(),logStreams.errStream()],
+      }
+    );
+    await spawnCmd.call();
+  }
+  console.log('<<<runPostInitScript2');
 }
 
 // async function runServe2(name, shared, params, argsIn) {
@@ -650,29 +737,21 @@ function getMountDir(lxcContName,params){
 }
 
 async function sshfsMount(lxcContName, shared, params, logStreams, argsIn) {
-  if (isMounted(lxcContName,params)){
+  if (isMounted(lxcContName,shared)){
     console.log('already mounted');
     return;
   }
   let debug = (argsIn && argsIn.indexOf('-d') >= 0);
-  let contip4 = getContainerIp4Address(lxcContName);
-  if (!fs.existsSync(params.sshfsMountRoot))
-    fs.mkdirSync(params.sshfsMountRoot, { recursive: true });
-  let mountDir = getMountDir(lxcContName,params);//params.sshfsMountRoot + '/' + lxcContName;
-  if (!fs.existsSync(mountDir))
-    fs.mkdirSync(mountDir);
-  let prog = shared.sshfsMountArgs.prog;
-  let args = [];
+  //let contip4 = getContainerIp4Address(lxcContName);
+  if (!fs.existsSync(shared.sshfsMountDir(lxcContName)))
+    fs.mkdirSync(shared.sshfsMountDir(lxcContName), { recursive: true });
+  let prog = shared.sshfsMountProg();
+  let args = shared.sshfsMountArgs(lxcContName);
   if (debug)
     args = [
       '-o', 'sshfs_debug', '-d'
-    ];
-  args = args.concat(shared.sshfsMountArgs.args);
-  args = args.concat([
-    '-o', `IdentityFile=${params.sshKeyFilename}`,
-    `${params.contUsername}@${contip4}:`,
-    mountDir,
-  ]);
+    ].concat(args);
+
   let strcmd = `${prog} ${args.join(' ')}\n`;
   //await logStreams.writeBoth(strcmd);
   console.log(strcmd);
@@ -681,7 +760,8 @@ async function sshfsMount(lxcContName, shared, params, logStreams, argsIn) {
   let efn = shared.logdir + `/${lxcContName}-sshfs-err.log`;
   let ostrm = fs.createWriteStream(ofn);
   let estrm = fs.createWriteStream(efn);
-  let mp = (x) => { return new Promise((res, rej) => { x.on('error', rej).on('open', res); }); };
+  let mp = (x) => { return new Promise((res, rej) => { 
+    x.on('error', rej).on('open', res); }); };
   await Promise.all([mp(ostrm), mp(estrm)]);
 
   let stdio = ['ignore', ostrm, estrm];
@@ -709,14 +789,13 @@ async function sshfsMount(lxcContName, shared, params, logStreams, argsIn) {
 }
 
 async function sshfsUnmount(lxcContName, shared, params, logStreams) {
-  if (!isMounted(lxcContName,params)){
+  if (!isMounted(lxcContName,shared)){
     console.log('${lxcContName} is already not mounted');
     return;
   }
-  let prog = shared.sshfsUnmountArgs.prog;
-  let args = shared.sshfsUnmountArgs.args.concat([
-    getMountDir(lxcContName,params),
-  ]);
+  let prog = shared.sshfsUnmountProg();
+  let args = shared.sshfsUnmountArgs(lxcContName);
+
   await logStreams.writeBoth(`${prog} ${args.join(' ')}\n`, false);
   console.log(`${prog} ${args.join(' ')}`);
   let proc = spawn(prog, args, {
@@ -738,9 +817,9 @@ async function sshfsUnmount(lxcContName, shared, params, logStreams) {
     });
 }
 
-function isMounted(lxcContName, params){
+function isMounted(lxcContName, shared){
   let lines = fs.readFileSync(`/etc/mtab`,'utf8').split('\n');
-  let mnt = getMountDir(lxcContName,params);
+  let mnt = shared.sshfsMountDir(lxcContName);
   let entry = lines.find((line)=>{return line.includes(mnt);});
   if (entry){
     console.log(entry);
@@ -750,7 +829,7 @@ function isMounted(lxcContName, params){
 }
 
 async function gitRestore(lxcContName, shared, params, logStreams, argsIn){
-  if (!isMounted(lxcContName,params))
+  if (!isMounted(lxcContName,shared))
     sshfsMount(lxcContName, shared, params, logStreams);
   let gitProperty = 'default';
   if (argsIn && argsIn.length){
@@ -769,7 +848,7 @@ async function gitRestore(lxcContName, shared, params, logStreams, argsIn){
 }
 
 async function gitPush(lxcContName, shared, params, logStreams, argsIn){
-  if (!isMounted(lxcContName,params))
+  if (!isMounted(lxcContName,shared))
     sshfsMount(lxcContName, shared, params, logStreams);
   let gitProperty = 'default';
   if (argsIn && argsIn.length){
@@ -787,10 +866,10 @@ async function gitPush(lxcContName, shared, params, logStreams, argsIn){
 }
 
 async function rsyncBackup(lxcContName, shared, params, logStreams, argsIn){
-  if (!isMounted(lxcContName,params)){
+  if (!isMounted(lxcContName,shared)){
     console.log("Was not mounted, attempting to mount");
     await sshfsMount(lxcContName, shared, params, logStreams, argsIn);
-    if (!isMounted(lxcContName,params))
+    if (!isMounted(lxcContName,shared))
       throw Error("${lxcContName} is not mounted with sshfs");
   }
   let idx=0;
@@ -831,10 +910,12 @@ async function runXephyr(shared,argsIn){
   await spawnCmd.call();
 }
 
-function setUserPulseAudioConfigFile() {
+function setUserPulseAudioConfigFile(shared) {
+  if (!shared)
+    throw new Error('parameter "shared" is missing');
   // can also be done dynamically with pacman or something - that may be better?
   //set pulseaudio to accept audio from host
-  let userConfigDir=`/home/${process.env.USER}/.config/pulse`; 
+  let userConfigDir=shared.hostuserRootConfigDir()+'/pulse'; 
   let userConfigFn=`${userConfigDir}/default.pa`; 
   let addContent =
   `load-module module-native-protocol-tcp port=4713 auth-ip-acl=127.0.0.1\n`;
@@ -907,6 +988,26 @@ async function clipXfer(fromDispNum,toDispNum){
     proc.stdin.end();
   });					 
 }
+
+async function configCompletionScript(shared) {
+  const completionShellScript=`\
+_cmgr_completion()
+{
+  read -ra COMPREPLY <<< \
+    $(node index.js completion \${COMP_CWORD} \${COMP_WORDS[@]} 2>/dev/null) 
+  notify-send "\${COMP_WORDS[*]}" "\${COMPREPLY[*]}"
+  return 0
+}
+complete -F _cmgr_completion cmgr
+`;
+  fs.writeFileSync(
+    shared.completionShellScriptFilename(),
+    completionShellScript);
+    
+  fs.appendFileSync(
+    `${process.env.HOME}/.bashrc`,
+    `source ${shared.completionShellScriptFilename()}\n`);
+}    
 
 // async function clipToCont(lxcContName){
 //   var contip4 = getContainerIp4Address(lxcContName);
@@ -1001,6 +1102,7 @@ exports.runXephyr=runXephyr;
 exports.clipXfer=clipXfer;
 exports.notifySend=notifySend;
 exports.setUserPulseAudioConfigFile=setUserPulseAudioConfigFile;
+exports.configCompletionScript=configCompletionScript;
 // test function(s)
 exports.testEnv=testEnv;
 

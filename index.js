@@ -2,7 +2,7 @@
 //const assert = require('assert').strict;
 const fs = require('fs');
 const { LogStreams } = require('./class-log-streams.js');
-const { SharedParams }=require('./class-shared-params.js');
+const { SharedParams, ownAppName }=require('./class-shared-params.js');
 const { ContParams }=require('./class-cont-params.js');
 const {SpawnCmd}=require('./class-defs.js');
 const { initialize, 
@@ -20,15 +20,15 @@ const { initialize,
   gitRestore, gitPush,
   createSshConfigLxc,
   setUserPulseAudioConfigFile,
+  configCompletionScript,
   runXephyr,
   clipXfer,
   testEnv,
 } = require('./ffvpn-prof.js');
 const {makeUfwRule,getNetworkInfo} = require('./default-params.js');
+const grammar = require('./grammar.js');
 
 
-
-const appConfigDir = `${process.env.HOME}/.config/luwp`;
 
 function help(){
 
@@ -89,16 +89,10 @@ async function main(){
   
   let lxcContName, argOff=2;
   
+  let appConfigDir = `${process.env.HOME}/.config/${ownAppName}`;
   let sharedParamsFilename = `${appConfigDir}/shared-params.yml`;
   let contParamsFilename = `${appConfigDir}/cont-params.yml`;
-  
-  // if (process.argv.length>argOff)
-  //   if (process.argv[argOff]=='--file'){
-  //     file = process.argv[argOff+1];
-  //     argOff+=2;
-  //   }
-  
-  
+    
   if (!fs.existsSync(appConfigDir)){
     fs.mkdirSync(appConfigDir,{recursive:true});
   }
@@ -144,7 +138,7 @@ async function main(){
     createSshConfigLxc(shared.sshConfigLxcFilename);
     return;
   case 'config-pulse-audio':
-    setUserPulseAudioConfigFile();
+    setUserPulseAudioConfigFile(appConfigDir);
     return;
   case 'show-ufw-rule':
     console.log(makeUfwRule(getNetworkInfo(),shared.ufwPortRange));
@@ -154,6 +148,38 @@ async function main(){
       let ufwRule = makeUfwRule(getNetworkInfo(),shared.ufwPortRange,true);
       await new SpawnCmd(ufwRule[0],ufwRule.slice(1),{stdio:'inherit'}).call();
     } 
+    return;
+  case 'delete-own-config-files':
+    fs.unlinkSync(sharedParamsFilename);
+    fs.unlinkSync(contParamsFilename);
+    return; 
+  case 'config-bash-completion':
+    configCompletionScript(shared);
+    return;
+  case 'completion-test':
+    // indices are adjusted differently from 'completion'
+    if (process.argv.length<4)
+      throw Error('grammar, #args <4');
+    grammar.completion(process.argv[3], process.argv.slice(4),{allParams:contParams});
+    // print EOL on stdout for readability
+    process.stdout.write('\n'); 
+    return;  
+  case 'completion':
+    // from bash entering 
+    //   % dummy anac
+    // with cursor on the space following 'anac'
+    // results in the completion shellscript with line
+    //   node index.js completion ${COMP_CWORD} ${COMP_WORDS[@]}
+    // calling this program with arguments as follows:
+    //   0:"/usr/local/bin/node"
+    //   1:".../index.js"
+    //   2:"completion"
+    //   3:"1"
+    //   4:"dummy"
+    //   5:"anac"      
+    if (process.argv.length<5)
+      throw Error('grammar, #args <5');
+    grammar.completion(process.argv[3]-1, process.argv.slice(5),{allParams:contParams});
     return;
   }
   
@@ -289,7 +315,7 @@ async function siggedMain() {
 siggedMain()
   .then(()=>{
     process.exitCode=0;
-    console.log("SUCCESS");
+    console.error("SUCCESS");
   })
   .catch(e => {
     //process.exitCode=1;
@@ -298,7 +324,7 @@ siggedMain()
     process.exit(1);
   })	
   .finally(()=>{
-    console.log("EXIT");
+    console.error("EXIT");
   });
 
 

@@ -1,0 +1,10 @@
+_myprog_completion()
+{
+  #echo COMP_WORDS are ${COMP_WORDS[@]}
+  #echo COMP_CWORD is ${COMP_CWORD}
+  read -ra COMPREPLY <<< $(node --inspect-brk index.js completion ${COMP_CWORD} ${COMP_WORDS[@]} 2>/dev/null) 
+  #read -ra COMPREPLY <<< $(node index.js completion ${COMP_CWORD} ${COMP_WORDS[@]} 2>/dev/null) 
+  notify-send "${COMP_WORDS[*]}" "${COMPREPLY[*]}"
+  return 0
+}
+complete -F _myprog_completion dummy

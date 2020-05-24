@@ -37,7 +37,7 @@ class DefaultParams {
   constructor(name,shared,phoneHomePort){
     Object.assign(this, {
       contName:name,
-      sshKeyFilename : `${process.env.HOME}/.ssh/to-${name}`,
+      sshKeyFilename : shared.sshKeyFilename(name),
       openVPN : {
         enable:false,
         vpnClientCertFilename : `${process.env.HOME}/client-${name}.ovpn`

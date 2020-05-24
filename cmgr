@@ -1,0 +1,11 @@
+#!/bin/bash
+echo "$@"
+echo "$1"
+if [[ "$1" == "-i" ]] ; then
+    echo with inspection flag
+    shift
+    node --inspect-brk index.js "$@" 
+else
+    node index.js "$@"
+fi
+

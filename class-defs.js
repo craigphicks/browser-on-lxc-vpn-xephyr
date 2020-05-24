@@ -32,9 +32,17 @@ function syscmd(cmd) {
 const spawnCmdParams_defaultOpts={
   detached:false,
   noErrorOnCmdNonZeroReturn:false,
-  detachUnrefDelayMs:1000,
+  detachedUnrefDelayMs:1000,
+  inheritEnv:true,
   assignToEnv:{}
 };
+
+class SpawnCmdError extends Error {
+  constructor(message){
+    super(message);
+  }
+}
+
 class SpawnCmdParams {
   constructor(
     prog=null,
@@ -48,17 +56,16 @@ class SpawnCmdParams {
     this.prog=prog;
     this.args=args;
     this.stdin=stdin;
-    this.opts=spawnCmdParams_defaultOpts;
+    this.opts=Object.assign({},spawnCmdParams_defaultOpts);
     Object.assign(this.opts,opts);
   }
 }
 
-class SpawnCmdError extends Error {
-  constructor(message){
-    super(message);
-  }
-}
-
+const specialOpts_default={
+  ...spawnCmdParams_defaultOpts,
+  logFunction:console.log.bind(console),
+  logStream:null,
+};
 
 class SpawnCmd {
   constructor(
@@ -68,34 +75,151 @@ class SpawnCmd {
       args:'pipe',
       after:[null,null,null]
     },
-    opts={
-      detached:false,
-      detachUnrefDelayMs:0,
-      noErrorOnCmdNonZeroReturn:false,
-      logFunction:console.log.bind(console),
-      logStream:null,
-    },
+    specialOpts=specialOpts_default,
     passThroughOpts={}
   ){
-    let opts_default={
-      detached:false,
-      detachUnrefDelayMs:0,
-      noErrorOnCmdNonZeroReturn:false,
-      logFunction:console.log.bind(console),
-      logStream:null
-    }; 
+    // let opts_default={
+    //   detached:false,
+    //   detachedUnrefDelayMs:0,
+    //   noErrorOnCmdNonZeroReturn:false,
+    //   logFunction:console.log.bind(console),
+    //   logStream:null,
+    //   inheritEnv:false,
+    //   assignToEnv:null,
+    // }; 
     this.prog=prog;
     this.args=args;
     this.stdio=stdio;
-    Object.assign(this,opts_default);
-    for (const k of Object.keys(opts)){
-      if (Object.keys(opts_default).includes(k))
-        this[k]=opts[k];
-      else
-        throw Error(`incorrect option ${k}`);
-    }
+    Object.keys(specialOpts).forEach((k)=>{
+      if (!Object.keys(specialOpts_default).includes(k))
+        throw new Error(`incorrect specialOpts property: ${k}`);
+    });
+    this.specialOpts={...specialOpts_default, ...specialOpts};
     this.passThroughOpts=passThroughOpts;
+    for (const check of ['stdio','env','detached'])
+      if (Object.keys(this.passThroughOpts).includes(check))
+        throw new Error(`${check} is not an allowed property in passThroughArgs`);
   }
+
+  makeCmdLogStr(){
+    let envDiff = this.passThroughOpts.env;
+    if (envDiff)
+      for (const k of Object.keys(process.env))
+        if (Object.keys(envDiff).includes(k))
+          delete envDiff[k];
+    let s = `START CMD:
+detached:${this.specialOpts.detached},
+detachedUnrefDelayMs:${this.specialOpts.detachedUnrefDelayMs},
+noErrorOnCmdNonZeroReturn:${this.specialOpts.noErrorOnCmdNonZeroReturn},
+inheritEnv:${this.specialOpts.inheritEnv},
+assignToEnv:${JSON.stringify(this.specialOpts.assignToEnv,2)}
+${this.prog} ${this.args.join(' ')}
+END CMD\n`;
+    return s;
+  }
+  makeError(msg) {
+    return new SpawnCmdError(
+      msg
+    ); 
+  }
+  async call(){
+    async function log_(m){
+      if (this.specialOpts.logFunction)
+        await this.specialOpts.logFunction(m);
+      if (this.specialOpts.logStream)
+        await new Promise((res)=>{
+          let cb=()=>{res();};
+          this.specialOpts.logStream.write(m,cb);
+        });
+    }
+    let log = log_.bind(this);
+    if (!this.prog)
+      throw this.makeError('No program name');
+    let stdio='pipe';
+    if (!this.stdio.args)
+      stdio='pipe';
+    else if (typeof this.stdio.args == 'string')
+      stdio=this.stdio.args;
+    else 
+      stdio=this.stdio.args.map((x)=>x);
+    // if (this.stdin.isFilename){
+    //   if (!this.stdin.text || !this.stdin.text.length)
+    //     throw this.makeError('input filename not provided');
+    //   stdin = fs.createReadStream(this.stdin.Filename);
+    //   stdio[0]='pipe';
+    // } else if (this.stdin.text && this.stdin.text.length) {
+    //   stdin = this.stdin.text;
+    //   stdio[0]='pipe';
+    // }
+    {
+      let logstr=this.makeCmdLogStr();
+      if (this.stdio
+        && this.stdio.after
+        && this.stdio.after[0]
+        && typeof this.stdio.after[0]=='string')
+        logstr += `\nSTART INPUT SCRIPT:\n${this.stdio.after[0]}END INPUT SCRIPT`;
+      await log(logstr);
+    }
+    let proc=null;
+    let spawnOpts = Object.assign({},this.passThroughOpts);
+    spawnOpts.detached = this.specialOpts.detached; // historical back compat
+    spawnOpts.stdio = stdio;
+    // the spread operator comes in handy 
+    spawnOpts.env = { 
+      ...(this.specialOpts.inheritEnv ? process.env : {}), 
+      ...this.specialOpts.assignToEnv};
+    
+    let procPromise = new Promise((resolve, reject)=>{
+      proc=child_process.spawn(
+        this.prog, this.args, 
+        spawnOpts 
+      )
+        .on('error', async (e)=>{
+          try {await log(e.message);}
+          // eslint-disable-next-line no-empty
+          catch(e){}
+          reject(this.makeError(e.message));
+        })
+        // eslint-disable-next-line no-unused-vars
+        .on('exit', async (code,signal)=>{
+          //await log(`on exit, code=${code}, signal=${signal}`);
+        })
+        .on('close', async (code,signal)=>{
+          //await log(`on close, code=${code}, signal=${signal}`);
+          if (code==0 || this.specialOpts.noErrorOnCmdNonZeroReturn)
+            resolve();
+          else
+            reject(this.makeError(`on close, code=${code}, signal=${signal}`));
+        });
+      if (this.stdio.after){
+        if (this.stdio.after[1])
+          proc.stdout.pipe(this.stdio.after[1]);
+        if (this.stdio.after[2])
+          proc.stderr.pipe(this.stdio.after[2]);
+        if (this.stdio.after[0]){
+          if (typeof this.stdio.after[0]=='string'){
+            proc.stdin.write(this.stdio.after[0]);
+            proc.stdin.end();
+          } else {
+            this.stdio.after[0].pipe(proc.stdin);
+          }
+        }
+      }
+      if (this.specialOpts.detached){
+        if (!this.specialOpts.detachedUnrefDelayMs){
+          proc.unref();
+          resolve();
+        } else {
+          setTimeout(()=>{
+            proc.unref();
+            resolve();
+          },this.specialOpts.detachedUnrefDelayMs);
+        }
+      }
+    });    
+    return await procPromise;
+  }
+
   static async setFromParams(spawnCmdParamsIn,stdioOverrides=null){
     function waitOpen(h){
       return new Promise((resolve,reject)=>{
@@ -114,15 +238,18 @@ class SpawnCmd {
     that.prog=spawnCmdParams.prog;
     that.args=spawnCmdParams.args;
     // these are the options
-    that.detached=spawnCmdParams.opts.detached;
-    that.detachUnrefDelayMs=spawnCmdParams.opts.detachUnrefDelayMs;
-    that.noErrorOnCmdNonZeroReturn=spawnCmdParams.opts.noErrorOnCmdNonZeroReturn;
+    that.specialOpts={...that.specialOpts,...spawnCmdParams.opts};
+    // that.specialOpts.detached=spawnCmdParams.opts.detached;
+    // that.specialOpts.detachedUnrefDelayMs=spawnCmdParams.opts.detachedUnrefDelayMs;
+    // that.specialOpts.noErrorOnCmdNonZeroReturn=spawnCmdParams.opts.noErrorOnCmdNonZeroReturn;
+    // that.specialOpts.inheritEnv=spawnCmdParams.opts.inheritEnv;
+    // that.specialOpts.assignToEnv=spawnCmdParams.opts.assignToEnv;
     // currently only adds or replaces keys, cannot remove keys.
-    if (spawnCmdParams.opts.assignToEnv 
-      && Object.keys(spawnCmdParams.opts.assignToEnv).length){
-      let newEnv = Object.assign({},process.env);
-      that.passThroughOpts.env = Object.assign(newEnv,spawnCmdParams.opts.assignToEnv);
-    }
+    // if (spawnCmdParams.opts.assignToEnv 
+    //   && Object.keys(spawnCmdParams.opts.assignToEnv).length){
+    //   let newEnv = Object.assign({},process.env);
+    //   that.passThroughOpts.env = Object.assign(newEnv,spawnCmdParams.opts.assignToEnv);
+    // }
     that.stdio.args=['ignore','ignore','ignore'];
     {
       that.stdio.after=[null,null,null];
@@ -157,107 +284,8 @@ class SpawnCmd {
     }
     return that;
   }
-  makeCmdLogStr(){
-    let s = (this.stdio[0]) ? '<pipe input> | ' : '';
-    return s+`${this.prog} ${this.args.join(' ')}`;
-  }
-  makeError(msg) {
-    return new SpawnCmdError(
-      msg + ' : ' + this.makeCmdLogStr()
-    ); 
-  }
-  async call(){
-    async function log_(m){
-      if (this.logFunction)
-        await this.logFunction(m);
-      if (this.logStream)
-        await new Promise((res)=>{
-          let cb=()=>{res();};
-          this.logStream.write(m,cb);
-        });
-    }
-    let log = log_.bind(this);
-    if (!this.prog)
-      throw this.makeError('No program name');
-    let stdio='pipe';
-    if (!this.stdio.args)
-      stdio='pipe';
-    else if (typeof this.stdio.args == 'string')
-      stdio=this.stdio.args;
-    else 
-      stdio=this.stdio.args.map((x)=>x);
-    // if (this.stdin.isFilename){
-    //   if (!this.stdin.text || !this.stdin.text.length)
-    //     throw this.makeError('input filename not provided');
-    //   stdin = fs.createReadStream(this.stdin.Filename);
-    //   stdio[0]='pipe';
-    // } else if (this.stdin.text && this.stdin.text.length) {
-    //   stdin = this.stdin.text;
-    //   stdio[0]='pipe';
-    // }
-    {
-      let logstr=this.makeCmdLogStr();
-      if (this.stdio
-        && this.stdio.after
-        && this.stdio.after[0]
-        && typeof this.stdio.after[0]=='string')
-        logstr += `\nSTART INPUT SCRIPT:\n${this.stdio.after[0]}END INPUT SCRIPT`;
-      await log(logstr);
-    }
-    let proc=null;
-    let spawnOpts = Object.assign({},this.passThroughOpts);
-    spawnOpts.detached = this.detached; // historical back compat
-    spawnOpts.stdio = stdio;
-    let procPromise = new Promise((resolve, reject)=>{
-      proc=child_process.spawn(
-        this.prog, this.args, 
-        spawnOpts 
-      )
-        .on('error', async (e)=>{
-          try {await log(e.message);}
-          // eslint-disable-next-line no-empty
-          catch(e){}
-          reject(this.makeError(e.message));
-        })
-        // eslint-disable-next-line no-unused-vars
-        .on('exit', async (code,signal)=>{
-          //await log(`on exit, code=${code}, signal=${signal}`);
-        })
-        .on('close', async (code,signal)=>{
-          //await log(`on close, code=${code}, signal=${signal}`);
-          if (code==0 || this.noErrorOnCmdNonZeroReturn)
-            resolve();
-          else
-            reject(this.makeError(`on close, code=${code}, signal=${signal}`));
-        });
-      if (this.stdio.after){
-        if (this.stdio.after[1])
-          proc.stdout.pipe(this.stdio.after[1]);
-        if (this.stdio.after[2])
-          proc.stderr.pipe(this.stdio.after[2]);
-        if (this.stdio.after[0]){
-          if (typeof this.stdio.after[0]=='string'){
-            proc.stdin.write(this.stdio.after[0]);
-            proc.stdin.end();
-          } else {
-            this.stdio.after[0].pipe(proc.stdin);
-          }
-        }
-      }
-      if (this.detached){
-        if (!this.detachUnrefDelayMs){
-          proc.unref();
-          resolve();
-        } else {
-          setTimeout(()=>{
-            proc.unref();
-            resolve();
-          },this.detachUnrefDelayMs);
-        }
-      }
-    });    
-    return await procPromise;
-  }
+
+
 } // class SpawnCmd
 
 

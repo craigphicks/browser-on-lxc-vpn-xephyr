@@ -5,6 +5,8 @@ const { syscmd} = require('./class-defs.js');
 const { getNetworkInfo }=require('./default-params.js');
 const yaml = require('js-yaml');
 
+const ownAppName='cmgr';
+
 class SharedParams {
   constructor(filename=null){
     if (filename){
@@ -19,8 +21,14 @@ class SharedParams {
       }
       this.ufwPortRange='3000:3050,4713';
       this.xephyrDisplay=':2';
-      this.sshConfigLxcFilename=`${process.env.HOME}/.ssh/config-lxc`;
-      this.sshfsMountRootDir=`${process.env.HOME}/mnt-lxc`;
+      this.sshConfigLxcFilename=`${process.env.HOME}/.ssh/config-${ownAppName}`;
+      this.sshKeyFileDir=`${process.env.HOME}/.ssh`;
+      this.sshfsMountRootDir=`${process.env.HOME}/mnt-${ownAppName}`;
+
+      this.userRootConfigDir=`${process.env.HOME}/.config`;
+      this.appConfigDir=`${this.userRootConfigDir}/${ownAppName}`;
+
+      //this.contUserRootConfigDir=`/home/${shared.contUsername}/.config/
       try { 
         let tztmp = fs.readFileSync(`/etc/timezone`,'utf8');
         this.tz = tztmp.slice(0,-1); // gte rid of EOL
@@ -30,7 +38,7 @@ class SharedParams {
       }
       Object.assign(this,
         {
-          logdir: "/tmp/log/lxc",
+          logdir: `/tmp/log/${ownAppName}`,
           ssh : {
             prog : 'ssh',
             configArgs : ["-F", ],
@@ -70,7 +78,7 @@ class SharedParams {
     }
   } // constructor
   writeToFile(filename){
-    let yml = yaml.safeDump(this,{lineWidth:999,skipInvalid:true} );
+    let yml = yaml.safeDump(this,{lineWidth:999,skipInvalid:true,noRefs:true} );
     fs.writeFileSync(filename,yml,'utf8');
   }
   sshProg(){ return this.ssh.prog; }  
@@ -83,20 +91,29 @@ class SharedParams {
       a=a.concat(this.ssh.audioArgs).concat(this.ssh.xArgs);
     return a.concat(contName);
   }
+  sshKeyFilename(contName){
+    return this.sshKeyFileDir + '/' + `to-${contName}`;
+  }
   sshfsMountDir(contName) { return `${this.sshfsMountRootDir}/${contName}`; } 
   sshfsMountProg() { return this.sshfsMount.prog; }
   sshfsMountArgs(contName) { 
     return this.sshfsMount.configArgs.concat([this.sshConfigLxcFilename])
-      .concat(this.sshsf.otherArgs)
-      .concat([`${contName}:`, this.sshsfMountDir(contName)]);
+      .concat(this.sshfsMount.otherArgs)
+      .concat([`${contName}:`, this.sshfsMountDir(contName)]);
   }
   sshfsUnmountProg() { return this.sshfsUnmount.prog; }
   sshfsUnmountArgs(contName) { 
     return this.sshfsUnmount.args
-      .concat([this.sshsfMountDir(contName)]);
+      .concat([this.sshfsMountDir(contName)]);
   }
   xephyrProg() { return this.xephyr.prog; }
   xephyrArgs() { return this.xephyr.args.concat([this.xephyrDisplay]); }
+  hostUserRootConfigDir() { return this.userRootConfigDir; }
+  hostUserAppConfigDir() { return this.appConfigDir;}
+  completionShellScriptFilename() { 
+    return this.hostUserAppConfigDir()+'/'+`${ownAppName}_completion`;
+  }
 } // class SharedSettings
 
 exports.SharedParams=SharedParams;
+exports.ownAppName=ownAppName;

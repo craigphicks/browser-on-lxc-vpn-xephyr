@@ -17,7 +17,7 @@
       "type": "node",
       "request": "launch",
       "name": "default",
-      "args":[ "create-ssh-config-lxc"],
+      "args":[ "completion", "0", "anac"],
       "program": "${workspaceFolder}/index.js"
     },
     {

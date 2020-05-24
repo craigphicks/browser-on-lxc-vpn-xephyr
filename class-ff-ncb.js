@@ -8,7 +8,7 @@ const { DefaultParams } = require('./default-params.js');
 const postInitScript=`\
 export PATH="$HOME/.local/bin:$PATH"
 sudo apt-get -qq -y install \
-  firefox pulseaudio dbus-x11 xserver-xephyr openbox || exit 10
+  firefox pulseaudio dbus-x11 openbox || exit 10
 `;
 
 const serveScripts={
