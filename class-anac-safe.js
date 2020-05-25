@@ -18,20 +18,6 @@ conda upgrade -y -q anaconda || exit 60
 pip install --upgrade tensorflow || exit 70
 exit 0
 `;
-// eslint-disable-next-line no-unused-vars
-const serveScript_defaultXXX=`\
-export PATH="/home/ubuntu/anaconda3/bin:$PATH"
-source .bashrc || exit 110
-jupyter notebook stop 8888 2>&1 >/dev/null 
-jupyter notebook stop 8889 2>&1 >/dev/null
-export DISPLAY=:10 
-export PULSE_SERVER=tcp:localhost:44713
-export BROWSER=firefox
-ps -aux | grep -v grep | grep openbox
-if [[ $? ]] ; then  openbox-session || exit 115
-jupyter notebook || exit 120
-`;
-
 
 const sysdUnitFileText=`\
 [Unit]
@@ -39,7 +25,7 @@ Description=openbox session systemd service.
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/openbox-session 
+ExecStart=/usr/bin/env /usr/bin/openbox-session 
 #Restart=always
 
 [Install]
@@ -47,34 +33,57 @@ WantedBy=default.target
 `;
 
 const sysdEnvFileText=`\
-DISPLAY=:10
 PULSE_SERVER=tcp:localhost:44713
 BROWSER=firefox
 PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
 CONDA_EXE=/home/ubuntu/anaconda3/bin/conda
 CONDA_PREFIX=/home/ubuntu/anaconda3
 CONDA_PYTHON_EXE=/home/ubuntu/anaconda3/bin/python
+OPENBOXD_SYSD_ENV=1
 `;
 
 
 const openboxEnvFileText=`\
-export DISPLAY=:10
 export PULSE_SERVER=tcp:localhost:44713
 export BROWSER=firefox
 export PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
 export CONDA_EXE=/home/ubuntu/anaconda3/bin/conda
 export CONDA_PREFIX=/home/ubuntu/anaconda3
 export CONDA_PYTHON_EXE=/home/ubuntu/anaconda3/bin/python
+export OPENBOX_ENV=1
 `;
 const openboxAutostartShText=`\
+env
 xsetroot -solid blue &
-/home/ubuntu/anaconda3/bin/jupyter notebook &
+#/home/ubuntu/anaconda3/bin/jupyter notebook &
 `;
 
 function systemctlStartServiceText(serviceName){
+  function randomString(nchars){
+    let s =''
+    for (let i=0; i<nchars; i++)
+      s+= Math.floor(Math.random()*36).toString(36);
+    return s; 
+  }
+
+  let token= randomString(20); 
   return `\
-systemctl --user is-active ${serviceName} \
-|| systemctl --user start ${serviceName} || exit 10
+source .bashrc || exit 10
+export ORIGINAL_DISPLAY="$DISPLAY"
+if [ -z "$DISPLAY" ] || [[ "$DISPLAY" == ":0" ]] ; then 
+  export DISPLAY=:10
+fi
+export PULSE_SERVER=tcp:localhost:44713
+export PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
+env
+/home/ubuntu/anaconda3/bin/jupyter notebook stop 
+JUPYTER_TOKEN=${token} /home/ubuntu/anaconda3/bin/jupyter notebook --no-browser &
+systemctl --user start openboxd || exit 20
+firefox --no-remote http://localhost:8888/?token=${token}
+##### will block here preventing pipe from disconnecting
+systemctl --user stop openboxd || exit 40
+xsetroot -solid black
+/home/ubuntu/anaconda3/bin/jupyter notebook stop 
 `;
 }
 
@@ -137,16 +146,26 @@ class ParamsAnacSafe extends DefaultParams {
         {filename:null,text:postInitScript},
         {detached:false, noErrorOnCmdNonZeroReturn:false}
       ),
-      // new SpawnCmdParams(
-      //   shared.sshProg(), 
-      //   shared.sshArgs(contName,true)
-      //     .concat([
-      //       'systemctl', '--user', 'enable',
-      //       this.openboxSysd_serviceName
-      //     ]),
-      //   {},
-      //   {detached:false, noErrorOnCmdNonZeroReturn:false}
-      // ),
+      new SpawnCmdParams(
+        shared.sshProg(), 
+        shared.sshArgs(contName,true)
+          .concat([
+            'systemctl', '--user', 'enable',
+            this.openboxSysd_serviceName
+          ]),
+        {},
+        {detached:false, noErrorOnCmdNonZeroReturn:false}
+      ),
+      new SpawnCmdParams(
+        shared.sshProg(), 
+        shared.sshArgs(contName,true)
+          .concat([
+            'systemctl', '--user', 'disable',
+            this.openboxSysd_serviceName
+          ]),
+        {},
+        {detached:false, noErrorOnCmdNonZeroReturn:false}
+      ),
     ];
     // this.serveScripts['default'] = { spawnCmdParams:new SpawnCmdParams(
     //   shared.sshProg(), 

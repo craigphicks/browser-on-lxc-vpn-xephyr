@@ -191,7 +191,7 @@ async function runPostInitScript2(name, shared, allParams, params, logStreams, a
   createSshConfigLxc(shared,allParams); 
 
   // lxc exec ff-ncb -- sudo -u ubuntu -H touch /home/ubuntu/.hushlogin
-  sshfsMount(name,shared,params,logStreams);
+  await sshfsMount(name,shared,params,logStreams);
 
   let remotefn=(fn)=>{
     return shared.sshfsMountDir(name)+'/'+fn;
@@ -325,8 +325,8 @@ async function runServe3(name, shared, allParams, params, argsIn) {
   console.log(">>>runServe3()");
   let doLog = (argsIn && argsIn.indexOf('--log') >= 0);
   let serveId = 'default';
-  if (argsIn && argsIn.length && argsIn[0][0] != '-') {
-    serveId = argsIn[0];
+  if (argsIn && argsIn.indexOf('--script')>=0) {
+    serveId = argsIn[argsIn.indexOf('--script')+1];
   }
   if (Object.keys(params.serveScripts).indexOf(serveId) < 0)
     throw Error(`Found no serveScript for ${name} named ${serveId}`);
@@ -830,7 +830,7 @@ function isMounted(lxcContName, shared){
 
 async function gitRestore(lxcContName, shared, params, logStreams, argsIn){
   if (!isMounted(lxcContName,shared))
-    sshfsMount(lxcContName, shared, params, logStreams);
+    await sshfsMount(lxcContName, shared, params, logStreams);
   let gitProperty = 'default';
   if (argsIn && argsIn.length){
     gitProperty=argsIn[0];
@@ -849,7 +849,7 @@ async function gitRestore(lxcContName, shared, params, logStreams, argsIn){
 
 async function gitPush(lxcContName, shared, params, logStreams, argsIn){
   if (!isMounted(lxcContName,shared))
-    sshfsMount(lxcContName, shared, params, logStreams);
+    await sshfsMount(lxcContName, shared, params, logStreams);
   let gitProperty = 'default';
   if (argsIn && argsIn.length){
     gitProperty=argsIn[0];
@@ -1070,12 +1070,12 @@ complete -F _cmgr_completion cmgr
 
 async function testEnv(){
   let scp = new SpawnCmdParams(
-    'env',
-    [],
-    {},
-    { assignToEnv:{TESTENV:"testEnv"}}
+    'bash',
+    ['-s'],
+    {text:'env\n'},
+    { detached:true, inheritEnv:false, assignToEnv:{DISPLAY:':2'}}
   );
-  let sc = await SpawnCmd.setFromParams(scp,{args:['ignore','inherit','inherit']});
+  let sc = await SpawnCmd.setFromParams(scp,{args:[null,'inherit','inherit']});
   sc.call();
 }
 
