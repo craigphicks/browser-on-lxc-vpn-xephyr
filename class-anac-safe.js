@@ -58,15 +58,8 @@ xsetroot -solid blue &
 #/home/ubuntu/anaconda3/bin/jupyter notebook &
 `;
 
-function systemctlStartServiceText(serviceName){
-  function randomString(nchars){
-    let s =''
-    for (let i=0; i<nchars; i++)
-      s+= Math.floor(Math.random()*36).toString(36);
-    return s; 
-  }
+function defaultServeScript(openboxService){
 
-  let token= randomString(20); 
   return `\
 source .bashrc || exit 10
 export ORIGINAL_DISPLAY="$DISPLAY"
@@ -77,11 +70,12 @@ export PULSE_SERVER=tcp:localhost:44713
 export PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
 env
 /home/ubuntu/anaconda3/bin/jupyter notebook stop 
-JUPYTER_TOKEN=${token} /home/ubuntu/anaconda3/bin/jupyter notebook --no-browser &
-systemctl --user start openboxd || exit 20
-firefox --no-remote http://localhost:8888/?token=${token}
+RNDSTR=\`cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1 | tr -d '\n'\`
+JUPYTER_TOKEN=$RNDSTR /home/ubuntu/anaconda3/bin/jupyter notebook --no-browser &
+systemctl --user start ${openboxService} || exit 20
+firefox --no-remote http://localhost:8888/?token=$RNDSTR
 ##### will block here preventing pipe from disconnecting
-systemctl --user stop openboxd || exit 40
+systemctl --user stop ${openboxService} || exit 40
 xsetroot -solid black
 /home/ubuntu/anaconda3/bin/jupyter notebook stop 
 `;
@@ -182,7 +176,7 @@ class ParamsAnacSafe extends DefaultParams {
       shared.sshArgs(contName,false),
       {
         filename:null, 
-        text:systemctlStartServiceText(this.openboxSysd_serviceName)
+        text:defaultServeScript(this.openboxSysd_serviceName)
       },
       {
         detached:true, 

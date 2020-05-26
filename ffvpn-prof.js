@@ -836,7 +836,7 @@ async function gitRestore(lxcContName, shared, params, logStreams, argsIn){
     gitProperty=argsIn[0];
   }
   let gitData = params.gits[gitProperty];
-  let contDir = `${getMountDir(lxcContName,params)}/${gitData.contDir}`;  
+  let contDir = `${shared.sshfsMountDir(lxcContName)}/${gitData.contDir}`;  
   await new SpawnCmd(
     'git', [
       'clone',
@@ -855,10 +855,10 @@ async function gitPush(lxcContName, shared, params, logStreams, argsIn){
     gitProperty=argsIn[0];
   }
   let gitData = params.gits[gitProperty];
-  let sshfsContGitDir = `${getMountDir(lxcContName,params)}/${gitData.contDir}/.git`;  
+  let contDir = `${shared.sshfsMountDir(lxcContName)}/${gitData.contDir}`;  
   await new SpawnCmd(
     'git', [
-      '--git-dir', sshfsContGitDir,
+      '--git-dir', contDir,
       'push',
     ],
     { args: 'inherit' }
