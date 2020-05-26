@@ -8,6 +8,9 @@ const postInitScript= `\
 export PATH="$HOME/.local/bin:$PATH"
 sudo apt-get -qq -y install tree x11-xserver-utils\
   firefox pulseaudio dbus-x11 openbox || exit 10
+# fix required for openbox
+mkdir - .config/openbox
+sed '/debian-menu.xml/d' /etc/xdg/openbox/rc.xml > $HOME/.config/rc.xml  
 [[ -f Anaconda3-2020.02-Linux-x86_64.sh ]] || \
   wget https://repo.anaconda.com/archive/Anaconda3-2020.02-Linux-x86_64.sh || exit 20
 bash Anaconda3-2020.02-Linux-x86_64.sh -b || exit 30
@@ -62,20 +65,27 @@ function defaultServeScript(openboxService){
 
   return `\
 source .bashrc || exit 10
+####
+# This next paragraph is to allow a scenarion where a single permanent
+# X enabled pipe with (hopefully) DISPLAY=:10 is being run by a separate process.
+# However, the preferred operation is to call this though an X enabled pipe.
 export ORIGINAL_DISPLAY="$DISPLAY"
-if [ -z "$DISPLAY" ] || [[ "$DISPLAY" == ":0" ]] ; then 
+if [ -z "$DISPLAY" ] || [[ $DISPLAY == *:0* ]] ; then 
   export DISPLAY=:10
 fi
+#####
 export PULSE_SERVER=tcp:localhost:44713
-export PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
+#export PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
 env
 /home/ubuntu/anaconda3/bin/jupyter notebook stop 
 RNDSTR=\`cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1 | tr -d '\n'\`
 JUPYTER_TOKEN=$RNDSTR /home/ubuntu/anaconda3/bin/jupyter notebook --no-browser &
-systemctl --user start ${openboxService} || exit 20
+openbox &
+PID_OPENBOX=$!
+xsetroot -solid blue &
 firefox --no-remote http://localhost:8888/?token=$RNDSTR
 ##### will block here preventing pipe from disconnecting
-systemctl --user stop ${openboxService} || exit 40
+kill $PID_OPENBOX
 xsetroot -solid black
 /home/ubuntu/anaconda3/bin/jupyter notebook stop 
 `;
@@ -100,39 +110,37 @@ class ParamsAnacSafe extends DefaultParams {
     this.openboxSysd_serviceName='openboxd.service';
 
     this.postInitScript.copyFiles=[
-      {
-        src: {text:sysdUnitFileText},
-        dst: {
-          dir:`.config/systemd/user`,
-          filename:`${this.openboxSysd_serviceName}`,
-          options:{mode:'0o644'}
-        }
-      },{
-        src:{text:openboxEnvFileText},
-        dst: {
-          dir:`.config/openbox`,
-          filename: 'environment',
-          options:{mode:'0o644'}
-        }
-      },{
-        src:{text:sysdEnvFileText},
-        dst: {
-          dir:`.config/environment.d`,
-          filename: `${this.openboxSysd_serviceName}.conf`,
-          options:{mode:'0o644'}
-        }
-      },{
-        src:{text:openboxAutostartShText},
-        dst: {
-          dir:`.config/openbox`,
-          filename: 'autostart',
-          options:{mode:'0o644'}
-        }
-      }
-
+      // {
+      //   src: {text:sysdUnitFileText},
+      //   dst: {
+      //     dir:`.config/systemd/user`,
+      //     filename:`${this.openboxSysd_serviceName}`,
+      //     options:{mode:'0o644'}
+      //   }
+      // },{
+      //   src:{text:openboxEnvFileText},
+      //   dst: {
+      //     dir:`.config/openbox`,
+      //     filename: 'environment',
+      //     options:{mode:'0o644'}
+      //   }
+      // },{
+      //   src:{text:sysdEnvFileText},
+      //   dst: {
+      //     dir:`.config/environment.d`,
+      //     filename: `${this.openboxSysd_serviceName}.conf`,
+      //     options:{mode:'0o644'}
+      //   }
+      // },{
+      //   src:{text:openboxAutostartShText},
+      //   dst: {
+      //     dir:`.config/openbox`,
+      //     filename: 'autostart',
+      //     options:{mode:'0o644'}
+      //   }
+      // }
     ];
     
-
     this.postInitScript.spawnCmdParams= [
       new SpawnCmdParams(
         shared.sshProg(), 

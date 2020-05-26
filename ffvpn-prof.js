@@ -650,14 +650,18 @@ async function initialize(lxcContName, shared, allParams, params, logStreams, ar
     var promPhoneHome = waitPhoneHome(
       params.phoneHomeListen.toAddr, params.phoneHomeListen.port);
   } else {
-    throw Error('The case for "phoneHomeListen.enable==false" as not been implemented');   
+    //throw Error('The case for "phoneHomeListen.enable==false" as not been implemented');   
   }
   // create the container with cloud init customization
   syscmd(`lxc launch ${params.lxcImageAlias} ${lxcContName} -p ${lxcProfileName}`);
+ 
+  console.log("LAUNCH executed, waiting for cloud init to finish ...");
+  if (params.phoneHomeListen.enable){
+    await promPhoneHome;
+  } else {
+    syscmd(`lxc exec ${lxcContName} -- cloud-init status -w`);
+  }
 
-  console.log("LAUNCH executed, waiting for phone home to signal cloud init finished ...");
-
-  await promPhoneHome;
 
   // wait until cloud init has finished
   console.log("CONTAINER has finished cloud init");
