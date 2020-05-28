@@ -44,9 +44,10 @@ class SpawnCmdError extends Error {
 }
 
 class SpawnCmdParams {
+  // suitable for read/write from file
   constructor(
     prog=null,
-    args=[],
+    args=[], // nested allowed, e.g., [['a','b'],['c']], in which case concat'ed
     stdin={
       filename:"",text:""
     }, //code checks for filename first
@@ -220,6 +221,7 @@ END CMD\n`;
     return await procPromise;
   }
 
+  // deprecated
   static async setFromParams(spawnCmdParamsIn,stdioOverrides=null){
     function waitOpen(h){
       return new Promise((resolve,reject)=>{
@@ -236,7 +238,10 @@ END CMD\n`;
       spawnCmdParamsIn.stderr, // usually undefined
     ];
     that.prog=spawnCmdParams.prog;
-    that.args=spawnCmdParams.args;
+    if (spawnCmdParams.args && Array.isArray(spawnCmdParams.args[0]))
+      that.args=spawnCmdParams.args.flat(); // flat would actually work for both cases
+    else
+      that.args=spawnCmdParams.args;
     // these are the options
     that.specialOpts={...that.specialOpts,...spawnCmdParams.opts};
     // that.specialOpts.detached=spawnCmdParams.opts.detached;
@@ -288,13 +293,89 @@ END CMD\n`;
 
 } // class SpawnCmd
 
+async function spawnCmd(
+  prog=null,
+  args=[],
+  stdio={
+    args:'pipe',
+    after:[null,null,null]
+  },
+  specialOpts=specialOpts_default,
+  passThroughOpts={}
+){
+  return new SpawnCmd(prog,args,stdio,specialOpts,passThroughOpts).call();
+}
+
+async function execSpawnCmdParams(spawnCmdParamsIn,stdioOverrides=null){
+  function waitOpen(h){
+    return new Promise((resolve,reject)=>{
+      h.on('open',resolve)
+        .on('error',(e)=>{reject(e);});
+    });
+  }
+  let spawnCmdParams = Object.assign({},spawnCmdParamsIn); 
+  spawnCmdParams.stdio=[
+    spawnCmdParamsIn.stdin,
+    spawnCmdParamsIn.stdout, // usually undefined
+    spawnCmdParamsIn.stderr, // usually undefined
+  ];
+  let that={};
+  that.prog=spawnCmdParams.prog;
+  // if spawnCmdParams.args are nested arrays then concatenate inner
+  if (spawnCmdParams.args && Array.isArray(spawnCmdParams.args[0]))
+    that.args=spawnCmdParams.args.flat(); // flat would actually work for both cases
+  else
+    that.args=spawnCmdParams.args;
+  that.specialOpts={...that.specialOpts,...spawnCmdParams.opts};
+  that.stdio.args=['ignore','ignore','ignore'];
+  {
+    that.stdio.after=[null,null,null];
+    for (const i of [0,1,2]){
+      let hadOverride=false;
+      if (stdioOverrides&&stdioOverrides.args&&stdioOverrides.args[i]){
+        that.stdio.args[i]=stdioOverrides.args[i];
+        hadOverride=true;
+      }
+      if (stdioOverrides&&stdioOverrides.after&&stdioOverrides.after[i]){
+        that.stdio.after[i]=stdioOverrides.after[i];
+        // must be pipe - allowing the caller to omit it
+        that.stdio.args[i]='pipe';
+        hadOverride=true;
+      }
+      if (hadOverride)
+        continue;
+      else if (!spawnCmdParams.stdio[i] || spawnCmdParams.stdio[i]=='ignore')
+        ;
+      else if (spawnCmdParams.stdio[i]=='inherit')
+        that.stdio[0]='inherit';
+      else if (spawnCmdParams.stdio[i].filename && spawnCmdParams.stdio[i].filename.length){
+        let stream= (i==0?
+          fs.createReadStream(spawnCmdParams.stdio[0].filename,'utf8')
+          : fs.createWriteStream(spawnCmdParams.stdio[0].filename,'utf8'));  
+        that.stdio.args[0]= await waitOpen(stream);          
+      } else if (i==0 && spawnCmdParams.stdio[0].text && spawnCmdParams.stdio[0].text.length){
+        that.stdio.after[0]=spawnCmdParams.stdio[0].text;
+        that.stdio.args[0]='pipe';
+      }
+    }
+  }
+  //return that;
+  return await spawnCmd(
+    that.prog,
+    that.args,
+    that.stdio,
+    that.specialOpts,
+    that.passThroughOpts
+  );
+}
+
+
+
 
 exports.SpawnCmd=SpawnCmd;
+exports.spawnCmd=spawnCmd;
 exports.SpawnCmdParams=SpawnCmdParams;
-// exports.sshConfigFileArgs=sshConfigFileArgs;
-// exports.sshXDisplayArgs=sshXDisplayArgs;
-// exports.sshAudioArgs=sshAudioArgs;
 exports.syscmd=syscmd;
-
+exports.execSpawnCmdParams=execSpawnCmdParams;
 
 

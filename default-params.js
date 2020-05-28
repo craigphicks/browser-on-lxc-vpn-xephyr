@@ -2,6 +2,7 @@
 
 const yaml = require('js-yaml');
 const { syscmd,SpawnCmdParams } = require('./class-defs.js');
+const cloudInitUtil = require('./cloudinit-util.js');
 
 function getNetworkInfo(bridgeName='lxdbr0') {
   let networkFromCDN = yaml.safeLoad(syscmd(
@@ -99,8 +100,34 @@ class DefaultParams {
         ruleArray:makeUfwRule(shared.networkInfo,phoneHomePort,true)
       };
     }
-  }  
+  } 
+  createCloudInitUserData(){
+    let ci = new cloudInitUtil.CloudInitUserData(this.cloudInit);
+    if (this.postInitScript.std.text && this.postInitScript.std.text.length){
+      let fn = `/home/${this.contUsername}/initOnce.sh`;
+      let un = `${this.contUsername}`;
+      ci.addWriteFile(
+        fn,
+        this.postInitScript.stdin.text,
+        un,
+        '0744');
+      ci.addRuncmd([fn],un);
+    }
+    if (this.serveScripts['default'].std.text 
+      && this.serveScripts['default'].std.text.length){
+      let fn = `/home/${this.contUsername}/serve.sh`;
+      let un = `${this.contUsername}`;
+      ci.addWriteFile(
+        fn,
+        this.postInitScript.stdin.text,
+        un,
+        '0744');
+    }
+    return ci;
+  } 
 }
+
+
 
 exports.getNetworkInfo=getNetworkInfo;
 exports.makeUfwRule=makeUfwRule;

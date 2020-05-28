@@ -22,46 +22,46 @@ pip install --upgrade tensorflow || exit 70
 exit 0
 `;
 
-const sysdUnitFileText=`\
-[Unit]
-Description=openbox session systemd service.
+// const sysdUnitFileText=`\
+// [Unit]
+// Description=openbox session systemd service.
 
-[Service]
-Type=simple
-ExecStart=/usr/bin/env /usr/bin/openbox-session 
-#Restart=always
+// [Service]
+// Type=simple
+// ExecStart=/usr/bin/env /usr/bin/openbox-session 
+// #Restart=always
 
-[Install]
-WantedBy=default.target
-`;
+// [Install]
+// WantedBy=default.target
+// `;
 
-const sysdEnvFileText=`\
-PULSE_SERVER=tcp:localhost:44713
-BROWSER=firefox
-PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
-CONDA_EXE=/home/ubuntu/anaconda3/bin/conda
-CONDA_PREFIX=/home/ubuntu/anaconda3
-CONDA_PYTHON_EXE=/home/ubuntu/anaconda3/bin/python
-OPENBOXD_SYSD_ENV=1
-`;
+// const sysdEnvFileText=`\
+// PULSE_SERVER=tcp:localhost:44713
+// BROWSER=firefox
+// PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
+// CONDA_EXE=/home/ubuntu/anaconda3/bin/conda
+// CONDA_PREFIX=/home/ubuntu/anaconda3
+// CONDA_PYTHON_EXE=/home/ubuntu/anaconda3/bin/python
+// OPENBOXD_SYSD_ENV=1
+// `;
 
 
-const openboxEnvFileText=`\
-export PULSE_SERVER=tcp:localhost:44713
-export BROWSER=firefox
-export PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
-export CONDA_EXE=/home/ubuntu/anaconda3/bin/conda
-export CONDA_PREFIX=/home/ubuntu/anaconda3
-export CONDA_PYTHON_EXE=/home/ubuntu/anaconda3/bin/python
-export OPENBOX_ENV=1
-`;
-const openboxAutostartShText=`\
-env
-xsetroot -solid blue &
-#/home/ubuntu/anaconda3/bin/jupyter notebook &
-`;
+// const openboxEnvFileText=`\
+// export PULSE_SERVER=tcp:localhost:44713
+// export BROWSER=firefox
+// export PATH=/home/ubuntu/anaconda3/bin:/home/ubuntu/anaconda3/condabin:$PATH
+// export CONDA_EXE=/home/ubuntu/anaconda3/bin/conda
+// export CONDA_PREFIX=/home/ubuntu/anaconda3
+// export CONDA_PYTHON_EXE=/home/ubuntu/anaconda3/bin/python
+// export OPENBOX_ENV=1
+// `;
+// const openboxAutostartShText=`\
+// env
+// xsetroot -solid blue &
+// #/home/ubuntu/anaconda3/bin/jupyter notebook &
+// `;
 
-function defaultServeScript(openboxService){
+function defaultServeScript(){
 
   return `\
 source .bashrc || exit 10
@@ -107,8 +107,6 @@ class ParamsAnacSafe extends DefaultParams {
   constructor(contName,shared,phoneHomePort)  {
     super(contName,shared,phoneHomePort);
 
-    this.openboxSysd_serviceName='openboxd.service';
-
     this.postInitScript.copyFiles=[
       // {
       //   src: {text:sysdUnitFileText},
@@ -148,43 +146,13 @@ class ParamsAnacSafe extends DefaultParams {
         {filename:null,text:postInitScript},
         {detached:false, noErrorOnCmdNonZeroReturn:false}
       ),
-      new SpawnCmdParams(
-        shared.sshProg(), 
-        shared.sshArgs(contName,true)
-          .concat([
-            'systemctl', '--user', 'enable',
-            this.openboxSysd_serviceName
-          ]),
-        {},
-        {detached:false, noErrorOnCmdNonZeroReturn:false}
-      ),
-      new SpawnCmdParams(
-        shared.sshProg(), 
-        shared.sshArgs(contName,true)
-          .concat([
-            'systemctl', '--user', 'disable',
-            this.openboxSysd_serviceName
-          ]),
-        {},
-        {detached:false, noErrorOnCmdNonZeroReturn:false}
-      ),
     ];
-    // this.serveScripts['default'] = { spawnCmdParams:new SpawnCmdParams(
-    //   shared.sshProg(), 
-    //   shared.sshArgs(contName,false),
-    //   {filename:null, text:serveScript_default},
-    //   {
-    //     detached:true, 
-    //     noErrorOnCmdNonZeroReturn:false,
-    //     assignToEnv:{DISPLAY:':2'}
-    //   },
-    // )};
     this.serveScripts['default'] = { spawnCmdParams:new SpawnCmdParams(
       shared.sshProg(), 
       shared.sshArgs(contName,false),
       {
         filename:null, 
-        text:defaultServeScript(this.openboxSysd_serviceName)
+        text:defaultServeScript()
       },
       {
         detached:true, 

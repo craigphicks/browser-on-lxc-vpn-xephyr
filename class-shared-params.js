@@ -113,6 +113,7 @@ class SharedParams {
   completionShellScriptFilename() { 
     return this.hostUserAppConfigDir()+'/'+`${ownAppName}_completion`;
   }
+
 } // class SharedSettings
 
 exports.SharedParams=SharedParams;
