@@ -1,89 +1,62 @@
 #!/usr/bin/env node --inspect-brk
 'strict';
 const { 
-  ParseCli, 
+  parse, completion, symbols, 
 } = require('./parse-cli.js');
 
-class MyParseCli extends ParseCli {
-  constructor(...args){
-    super(...args);
-  }
-  parseConfFilename(w,continueDo=false){
-    if (continueDo)
-      return [];
-    return w;
-  }
-  parse(){
-    // parse top flags
-    var words=this.state.words;
-    let table0 = [
-      ['xephyr', 0],
-      ['test-env',0],
-      ['clip-xfer', { 
-        positionals: [ParseCli.symInt,ParseCli.symInt],
-      }],
-      ['config-ssh',0],
-      ['config-pulse-audio',0 ],
-      ['delete-own-config-files',0 ],
-    ];
-    let table1_1 = [
-      ['init', 0],
-      ['post-init',{
-        flags:[
-          ['--copyOnly',0]
-        ]
-      }],
-      ['serve',{
-        flags:[['--log',0]]
-      }],
-      ['sshfs-mount',0],
-      ['sshfs-unmount',0],
-      ['git-restore',0],
-      ['git-push',0],
-    ];
-    let table1 = [
-      ["anac-safe",{
-        recurse:table1_1
-      }]
-    ];
+function parseConfFilename(w,completion=false){
+  if (completion)
+    return [];
+  return w;
+}
 
-    let rootTableItem = {
-      action:{key:null,function:null},
+function makeRootTable(){
+  let table0 = [
+    ['xephyr', 0],
+    ['test-env',0],
+    ['clip-xfer', { 
+      positionals: [symbols.symInt,symbols.symInt],
+    }],
+    ['config-ssh',0],
+    ['config-pulse-audio',0 ],
+    ['delete-own-config-files',0 ],
+  ];
+  let table1_1 = [
+    ['init', 0],
+    ['post-init',{
       flags:[
-        ['--log', 0],
-        ['--conf', this.parseConfFilename],
-        ['--help', 0],
-      ],
-      postitionals:null,
-      recurse: table0.concat(table1),
-    };
-    MyParseCli.deepFreezeTable(rootTableItem);
+        ['--copyOnly',0]
+      ]
+    }],
+    ['serve',{
+      flags:[['--log',0]]
+    }],
+    ['sshfs-mount',0],
+    ['sshfs-unmount',0],
+    ['git-restore',0],
+    ['git-push',0],
+  ];
+  let table1 = [
+    ["anac-safe",{
+      recurse:table1_1
+    }]
+  ];
 
-    let res = this.parseTableItem(rootTableItem,words);
-    if (this.completionDo())
-      return this.completionGetCandidates();
-    else
-      return res;
-  }
+  let rootTable = {
+    flags:[
+      ['--log', 0],
+      ['--conf', parseConfFilename],
+      ['--help', 0],
+    ],
+    postitionals:null,
+    recurse: table0.concat(table1),
+  };
+  return rootTable;
 }
 
-////////////////////////////////////////////////////////////////////
-
-function completion(cword,words){
-  let pc = new MyParseCli(words,cword);
-  let nextCandidates = pc.parse(); // result not used for completion
-  return nextCandidates;
-}
-
-function parse(words){
-  let pc = new MyParseCli(words);
-  return pc.parse(); // result not used for completion
-}
-
-////////////////////////////////////////////////////////////////////
 
 const testdata0 = [
-  null,
+//  null,
   '',
   'xephyr', 
   'test-env',
@@ -94,24 +67,24 @@ const testdata0 = [
   'delete-own-config-files', 
 ];
 
-
+const rootTable=makeRootTable();
 for (const str of testdata0) {
-  const a = !str ? [] : str.split(/\s+/);
+  const a = str=='' ? [] : !str ? null : str.split(/\s+/);
   console.error(`---> parse ${str}`);
-  let testParseItem = { type:'parse', input: [a]};
+  let testParseItem = { type:'parse', input: a};
   try {
-    testParseItem.parsed=parse(a);
+    testParseItem.parsed=parse(rootTable,a);
   } catch(e) {
     testParseItem.errorMessage=e.message;
   }
   console.log(JSON.stringify(testParseItem,null,2));
-  continue;
+  //continue;
   for (let n=0; n<=a.length; n++ ) {
     //console.log(`---> ${n}, ${str}`);
     console.error(`---> completion ${n}, ${str}`);
     let testCompItem = { type:'completion', input: [n,a]};
     try {
-      testCompItem.completions=completion(n,a);
+      testCompItem.completions=completion(rootTable, n,a);
     } catch(e) {
       testCompItem.errorMessage=e.message;
     }

@@ -6,6 +6,8 @@ const symFloat = Symbol ('symFloat');
 
 
 function deepCopyEnumerable(x){
+  if (x===undefined)
+    throw new Error('undefined value found in tree');
   if (x===null) 
     return x;
   if (Array.isArray(x)){
@@ -21,6 +23,7 @@ function deepCopyEnumerable(x){
     }
     return y;
   }
+  // boolean, string, number, symbol, function, bigint -> expected and ok
   return x;
 }
 
@@ -32,21 +35,38 @@ class ParseError extends Error {
 }
 
 class ParseCli {
-  constructor(words, completionCWord=-1){
-    this.state = { 
+  constructor(table=null, words=null, completionCWord=-1){
+    this._table=null;
+    this.state = null;
+    this.completion=null;
+    if (table)
+      this.setTable(table);
+    if (words)
+      this.setWords(words, completionCWord);
+  }
+  setTable(tableIn){
+    let table = ParseCli.createInternalTable(tableIn);
+    this._table=table;
+  }
+  //table(){return this._table; }
+  setWords(words, completionCWord=-1){
+    if (!words || !Array.isArray(words) 
+    || !words.every((x)=>{return typeof x=='string';}))
+      throw new Error('input words must be array of strings');
+    this.state = {
       completed:[],
       words:words.slice(),
       wordsIn:Object.freeze(words.slice()),
-      table:null,
     };
-    this.completion={
-      active:false,
-      cword:completionCWord,
-      done:false,
-      candidates:[],
-    };
-    this.completion.active=(completionCWord>=0);
+    if (completionCWord>=0)
+      this.completion={
+        active:(completionCWord>=0),
+        cword:completionCWord,
+        done:false,
+        candidates:[],
+      };
   }
+
   static deepFreezeTable(t){
     if (t && typeof t=='object'){
       for (const k of Object.keys(t))
@@ -55,37 +75,40 @@ class ParseCli {
     }
   }
 
-  setParseTable(table){
+  static createInternalTable(table){
     function normalize(t){
-      if (!Array.isArray(t) || t.length!=2)
-        throw new Error('table structure is not array length 2. instead is '
-          + JSON.stringify(t),null,2);
-      if (typeof t[0]=='string')
-        t[0] = {action:{key:t[0],function:null}};
-      else if (Array.isArray(t[0]) && t[0].length==2 && typeof t[0][0]=='string') 
-        t[0] = {action:{key:t[0][0],function:t[0][1]}};
-      else if (!(typeof t[0]=='object' 
-        && t[0].action && typeof t[0].action == 'object'
-        && t[0].action.key && typeof t[0].action.key=='string'))
-        throw new Error(
-          `incorrect table head structure ${JSON.stringify(t[0]),null,2}`);
       // recursively normalize any tables under recurse
-      if (Array.isArray(t[1]))
+      if (Array.isArray(t))
         throw new Error(
-          `incorrect table tail structure ${JSON.stringify(t[1]),null,2}`);
-      if (t[1] && typeof t[1]=='object' && t[1].recurse) {
-        if (!Array.isArray(t[1].recurse))
+          `incorrect table structure, found array: ${JSON.stringify(t),null,2}`);
+      if (t && typeof t=='object' && t.recurse) {
+        if (!Array.isArray(t.recurse))
           throw new Error(
             `recurse value must be array , but is instead `+
-            `${JSON.stringify(t[1].recurse),null,2}`);
+            `${JSON.stringify(t.recurse),null,2}`);
+      } else
+        return; 
+      for (let entry of t.recurse) {
+        if (!Array.isArray(entry) || entry.length!=2)
+          throw new Error('recurse table entry is not array length 2. instead is '
+          + JSON.stringify(entry),null,2);
+        if (typeof entry[0]=='string')
+          entry[0] = {action:{key:entry[0],function:null}};
+        else if (Array.isArray(entry[0]) && entry[0].length==2 && typeof entry[0][0]=='string') 
+          entry[0] = {action:{key:entry[0][0],function:entry[0][1]}};
+        else if (!(typeof entry[0]=='object' 
+        && entry[0].action && typeof entry[0].action == 'object'
+        && entry[0].action.key && typeof entry[0].action.key=='string'))
+          throw new Error(
+            `incorrect recurse table entry structure ${JSON.stringify(entry[0]),null,2}`);
 
-        for (let tt of t[1].recurse)
-          normalize(tt);
+        normalize(entry[1]);
       }
     }
     let t = deepCopyEnumerable(table);
     normalize(t);
-    this.state.table=t;
+    ParseCli.deepFreezeTable(t);
+    return t;
   }
 
   createParseError(msg) {
@@ -111,7 +134,7 @@ class ParseCli {
     this.state.completed.push(this.state.words.splice(0,1));
   }
   completionDo(){
-    return this.completion.active 
+    return this.completion && this.completion.active 
       && this.completion.cword>=this.wordIndex();
   }
   // completionWordToComplete(){
@@ -131,7 +154,7 @@ class ParseCli {
   //     && cand.substring(0,partial.length)==partial;
   // }
   completionDone(){
-    return this.completion.done;
+    return this.completionDo() && this.completion.done;
   }
   completionSetDone(){
     return this.completion.done=true;
@@ -154,15 +177,16 @@ class ParseCli {
       return [];
     switch (t){
     case symInt:
-      if (!(/^-?\d+$/.test(w)) || isNaN(w))
+      if (!w || !(/^-?\d+$/.test(w)) || isNaN(w))
         throw this.createParseError(`not an integer ${w}`);
       return Number(w);
     case symFloat:
-      if ((isNaN(w))) 
+      if (!w || (isNaN(w))) 
         throw this.createParseError(`not a float ${w}`);
       return Number(w);
     default:
-      throw this.createParseError(`unknown type ${t}`);  
+      // also is parse error if w is empty, but unknown symbol takes precedence 
+      throw new Error(`unexpected type ${t}`);  
     }
   }
   parsePositionals(args,acc=[]){
@@ -184,24 +208,25 @@ class ParseCli {
     if (typeof args[0] =='symbol') {
       acc.push(this.convertType(word,args[0]));
     } else {
-      // (args[0])( )
+      if (!word)
+        throw this.createParseError('missing positional argument');
       acc.push((args[0])(word,args[0]));
     }
     this.popWord();
     return this.parsePositionals(args.slice(1),acc);
   }
-  parseFlags(table,acc=[]){
+  parseFlags(flags,acc=[]){
     while (this.nextWord()){
       let word=this.nextWord();
       if (this.completionDo()){
-        for (const [k] of table){
+        for (const [k] of flags){
           if (ParseCli.completionMatch(word,k))
             this.completionAddCand(k);
         }
         return null;
       }
-      let item=table.find((x)=>{return x[0]==word;});
-      if (!item)
+      let item=flags.find((x)=>{return x[0]==word;});
+      if (!item) // not finding a flag is not a parse error, break
         break;
       this.popWord();
 
@@ -247,51 +272,84 @@ class ParseCli {
     if (this.completionDone())
       return;
     if (obj.recurse){
-      retObj.recurse=this.parseTable(obj.recurse);
+      retObj.recurse=this.parseTableRecurse(obj.recurse);
     }
     return retObj; 
   }
 
-  parseTable(table){
-    // function matcher(word,eq=(a,b)=>{return a==b;}){
-    //   return (x)=>{ return( 
-    //     (typeof x[0]== 'string' && eq(word,x[0])) 
-    //     || (typeof x[0]!= 'string' && eq(word,x[0].action.key))
-    //   );};
-    // }
-    // function eqComp(w,k){return ParseCli.completionMatch(w,k)}
-    if (table.customFunction)
-      return ((table.customFunction)());
+  parseTableRecurse(lut){
+    //  return ((table.customFunction)());
     let word=this.nextWord();
+    if (!word)
+      return null;
     if (this.completionDo()){
-      for (const [k] of table){
-        let str = (typeof k == 'string') ? k : k.action.key;
-        if (ParseCli.completionMatch(word,str))
-          this.completionAddCand(str);
-      }
+      lut.forEach((item)=>{
+        if (ParseCli.completionMatch(word,item[0].action.key))
+          this.completionAddCand(item[0].action.key);
+      });
       return null;
     }
-    let item = table.find((x)=>{return (
-      (typeof x[0]== 'string' && x[0]==word) 
-      || (typeof x[0]!= 'string' && x[0].action.key==word)
-    );});
-    if (!item)
-      return null;
+    let item = lut.find((x)=>{return (x[0].action.key==word);});
+    if (!item) {
+      let keys=lut.reduce((acc,x)=>{acc.push(x[0].action.key);},[]);
+      throw this.createParseError(`expecting one of ${keys.join(',')}`);
+    }
     this.popWord();
     // iwozere
-    let retObj={action:{key:item[0],function:item[1]}};
     if (!item[1])
-      return retObj;
+      return item[0];
     else {
-      let retObj2 = this.parseTableItem(item[1]);
-      return {...retObj,...retObj2};
+      let item2Rtn = this.parseTableItem(item[1]);
+      //return [item[0],item2Rtn];
+      return {...item[0],...item2Rtn};
+    }
+  }
+  parse(suppressCompletionParseErrors=false){
+    if (!this._table)
+      throw new Error('table not set');
+    if (!this.state)
+      throw new Error('words not set');
+    if (this.state.completed.length)
+      throw new Error('words not reset after last run');
+    if (!this.completion)
+      return this.parseTableItem(this._table);
+    else {
+      try {
+        this.parseTableItem(this._table);
+      // eslint-disable-next-line no-empty
+      } catch (e) {
+        if (e instanceof ParseError){
+          if (!suppressCompletionParseErrors)
+            throw e; 
+        } else 
+          throw e;
+      }
+      return this.completionGetCandidates();
     }
   }
 }
 ParseCli.symInt=symInt;
 ParseCli.symFloat=symFloat;
 
-//const symFin = Symbol ('symFin');
+const symbols ={ 
+  symInt:symInt,
+  symFloat:symFloat,
+};
+Object.freeze(symbols);
+
+function parse(table,words){
+  let pc = new ParseCli(table,words);
+  return pc.parse();
+}
+
+function completion(table, completionIndex, words, suppressCompletionParseErrors=true){
+  if (typeof completionIndex != 'number' && completionIndex>=0){
+    throw new Error(
+      `completionIndex argument expecting number>=0 but found ${completionIndex}`);
+  }
+  let pc = new ParseCli(table, words,completionIndex);
+  return pc.parse(suppressCompletionParseErrors);
+}
 
 /*
   <returnObject> ::== { 
@@ -307,6 +365,8 @@ ParseCli.symFloat=symFloat;
   positionalValue ::== <any>
 */
 
-exports.ParseCli=ParseCli;
-
+//exports.ParseCli=ParseCli;
+exports.parse=parse;
+exports.completion=completion;
+exports.symbols=symbols;
 
