@@ -1,0 +1,7 @@
+_muji_completion()
+{
+  read -ra COMPREPLY <<<     $(${1} completion ${COMP_CWORD} ${COMP_WORDS[@]} 2>/dev/null) 
+  notify-send "${COMP_WORDS[*]}" "${COMPREPLY[*]}"
+  return 0
+}
+complete -F _muji_completion ${1}

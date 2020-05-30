@@ -40,5 +40,12 @@
       //   "--experimental-modules"
       // ]
     },
-  ]
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "test-parse-cli",
+      "args":[ ],
+      "program": "${workspaceFolder}/test-parse-cli.js"
+    },
+ ]
 }
