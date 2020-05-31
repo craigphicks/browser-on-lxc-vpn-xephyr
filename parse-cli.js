@@ -4,7 +4,6 @@
 const symInt = Symbol ('symInt');
 const symFloat = Symbol ('symFloat');
 
-
 function deepCopyEnumerable(x){
   if (x===undefined)
     throw new Error('undefined value found in tree');
@@ -51,8 +50,17 @@ class ParseCli {
   //table(){return this._table; }
   setWords(words, completionCWord=-1){
     if (!words || !Array.isArray(words) 
-    || !words.every((x)=>{return typeof x=='string';}))
-      throw new Error('input words must be array of strings');
+    || !words.every((x)=>{return typeof x=='string' && x;}))
+      throw new Error('input words must be array of non empty strings');
+    if (completionCWord>words.length){
+      throw new Error(
+        `completion word index (${completionCWord})`
+        +` cannot be greater than the number of words (${words.length})`);
+    }
+    if (completionCWord<-1){
+      throw new Error(
+        `illegal completion word index value (${completionCWord})`);
+    }
     this.state = {
       completed:[],
       words:words.slice(),
@@ -135,7 +143,7 @@ class ParseCli {
   }
   completionDo(){
     return this.completion && this.completion.active 
-      && this.completion.cword>=this.wordIndex();
+      && this.completion.cword==this.wordIndex();
   }
   // completionWordToComplete(){
   //   let cword = Math.max(0,this.completion.cword);
@@ -210,7 +218,7 @@ class ParseCli {
     } else {
       if (!word)
         throw this.createParseError('missing positional argument');
-      acc.push((args[0])(word,args[0]));
+      acc.push((args[0])(word));
     }
     this.popWord();
     return this.parsePositionals(args.slice(1),acc);
@@ -280,8 +288,6 @@ class ParseCli {
   parseTableRecurse(lut){
     //  return ((table.customFunction)());
     let word=this.nextWord();
-    if (!word)
-      return null;
     if (this.completionDo()){
       lut.forEach((item)=>{
         if (ParseCli.completionMatch(word,item[0].action.key))
@@ -289,6 +295,8 @@ class ParseCli {
       });
       return null;
     }
+    if (!word)
+      return null;
     let item = lut.find((x)=>{return (x[0].action.key==word);});
     if (!item) {
       let keys=lut.reduce((acc,x)=>{acc.push(x[0].action.key);},[]);
@@ -364,6 +372,8 @@ function completion(table, completionIndex, words, suppressCompletionParseErrors
   flagObj ::== { key:<string>, value: <any> }
   positionalValue ::== <any>
 */
+
+
 
 //exports.ParseCli=ParseCli;
 exports.parse=parse;

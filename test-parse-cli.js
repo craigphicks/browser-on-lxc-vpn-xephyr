@@ -56,8 +56,8 @@ function makeRootTable(){
 
 
 const testdata0 = [
-//  null,
-  '',
+  null,
+//  '',
   'xephyr', 
   'test-env',
   'clip-xfer 0 2', 
@@ -69,15 +69,21 @@ const testdata0 = [
 
 const rootTable=makeRootTable();
 for (const str of testdata0) {
-  const a = str=='' ? [] : !str ? null : str.split(/\s+/);
-  console.error(`---> parse ${str}`);
-  let testParseItem = { type:'parse', input: a};
-  try {
-    testParseItem.parsed=parse(rootTable,a);
-  } catch(e) {
-    testParseItem.errorMessage=e.message;
+  if (str=='')
+    throw new Error(
+      'zero length string is not alowable test data, use null instead');
+  const a = !str ? [] : str.split(/\s+/);
+  // eslint-disable-next-line no-constant-condition
+  if (false) {
+    console.error(`---> parse ${str}`);
+    let testParseItem = { type:'parse', input: a};
+    try {
+      testParseItem.parsed=parse(rootTable,a);
+    } catch(e) {
+      testParseItem.errorMessage=e.message;
+    }
+    console.log(JSON.stringify(testParseItem,null,2));
   }
-  console.log(JSON.stringify(testParseItem,null,2));
   //continue;
   for (let n=0; n<=a.length; n++ ) {
     //console.log(`---> ${n}, ${str}`);
