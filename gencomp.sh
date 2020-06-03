@@ -50,6 +50,7 @@ function ${Comp_CompFnName} {
     compopt_rtn=\$?
     logger -t "${Comp_CompFnName}" -- "compopt returned \${compopt_rtn}"
   fi
+  logger -t "${Comp_CompFnName}" -- "current opts=\$(compopt)" 
   return 0
 }
 _EOF

@@ -4,6 +4,16 @@ const fs = require('fs');
 const cp = require('child_process');
 //const { execBashScript } = require('./exec-bash-script.js');
 
+async function loggerSync(m){
+  try {
+    var str=`logger -t ${process.argv0} -- ${m}`;
+    cp.execSync(str);
+  } catch (e) {
+    console.error(`Error when executing ${str}, ${e.message}`);
+  }
+}
+
+
 // eslint-disable-next-line no-unused-vars
 function parsePartialMatch(partial,token){
   return partial.length<=token.length
@@ -58,12 +68,36 @@ class ParseFloat extends ParseToken {
   hint(){ return 'Float'; }
 }
 
-function execCompgenish(cmd,partial){
+// function execCompgenish(cmd,partial){
+//   if (!partial)
+//     partial = '';
+//   try {
+//     // problematic, returns 1 (failure) for the case of no matches        
+//     var r = cp.execSync(`${cmd} ${partial}`,{shell:'/bin/bash',encoding:'utf8'});
+//   } catch(e) {
+//     r = "";
+//   }
+//   let candarr = r.split(/\s+/);
+//   candarr=candarr.filter((x)=>{return !!x;});
+//   return candarr;
+// }
+
+function spawnCompgen(args,partial){
   if (!partial)
     partial = '';
   try {
-    // problematic, returns 1 (failure) for the case of no matches        
-    var r = cp.execSync(`${cmd} ${partial}`,{shell:'/bin/bash',encoding:'utf8'});
+    var r;
+    var retObj = cp.spawnSync('compgen',
+      args.concat([partial]),
+      {shell:'/bin/bash',encoding:'utf8'});
+    if (retObj.status) {
+      loggerSync(retObj.error.message + ', ' + retObj.stderr);
+      r="";
+    } else if (retObj.signal){
+      r="";
+    } else {
+      r = retObj.stdout;
+    }
   } catch(e) {
     r = "";
   }
@@ -72,37 +106,7 @@ function execCompgenish(cmd,partial){
   return candarr;
 }
 
-///////////////////////////
-// eslint-disable-next-line no-unused-vars
-class ParseTokenViaBash extends ParseToken {
-  constructor(cmd,partialMatchFunc=null,parseEnforceMatch=false){
-    super();
-    this.cmd=cmd;
-    this.parseEnforceMatch=parseEnforceMatch;
-    this.partialMatchFunc=partialMatchFunc;
-  }
-  exec(partial){ 
-    return execCompgenish(this.cmd, partial); 
-  }
-  parse(w){ 
-    if (!this.enforceParse)
-      return w;
-    let ca =  this.exec(w);
-    if (ca.some((x)=>{return x==w;}))
-      return w;
-    else 
-      throw new Error(`${w} not valid ${this.action}`);       
-  } 
-  complete(partial){
-    let ca =  this.exec();
-    if (this.partialMatchFunc)
-      ca = ca.filter(this.partialMatchFunc.bind(0,partial));
-    else
-      ca = ca.filter(parsePartialMatch.bind(0,partial));
-    return ca;
-  }
-  hint() { return this.action; }
-}
+
 /////////////////////////////////////
 // For details on compgen see
 // https://www.gnu.org/software/bash/manual/html_node/Programmable-Completion-Builtins.html
@@ -110,9 +114,29 @@ class ParseTokenViaBash extends ParseToken {
 class ParseFilenameViaCompgen extends ParseToken {
   constructor(opts=ParseFilenameViaCompgen.defaultOpts){
     super();
-    this.opts={...ParseFilenameViaCompgen.defaultOpts,...opts};
-    if (typeof this.opts.compOpts=='string')
-      this.opts.compOpts=this.opts.compOpts.split(/\s+/);
+    this.opts={...ParseFilenameViaCompgen.defaultOpts};
+    if (opts._noFiles)
+      this.opts._noFiles=true;
+    if (opts.compOpts){
+      if (typeof opts.compOpts=='string'){
+        if (opts.compOpts=='disable')
+          this.opts.compOpts=null;
+        else 
+          throw new Error(`${opts.compOpts} is not a valid string value `
+            + `for opt.compOpts, must be 'disable' or an object with options`);
+      } else {
+        for (const k of Object.keys(opts.compOpts))
+          if (Object.keys(this.opts.compOpts).includes(k))
+            this.opts.compOpts[k]=!!opts.compOpts[k];
+          else 
+            throw new Error(`${k} is not a valid compopt option`);
+      }
+    }
+    if (opts.regexp)
+      if (opts.regexp instanceof RegExp)
+        this.opts.regexp=opts.regexp;
+      else 
+        throw new Error(`${opts.regexp} is not instanceof RegExp`);    
   }
   static getFilePart(fn){
     let li=fn.lastIndexOf('/');
@@ -125,9 +149,12 @@ class ParseFilenameViaCompgen extends ParseToken {
     return this.opts.regexp.test(fn);
   }
   complete(partial){
-    //let ad = execCompgenish(`compgen -A directory ${partial}`);
-    let af = execCompgenish(`compgen -A file ${partial}`);
-    // af=af.filter((fn)=>{return !ad.includes(fn);});
+    if (this.opts._noFiles)
+      return {tokens:[],compOpts:this.opts.compOpts};
+
+    //    let af = execCompgenish(`compgen -A file ${partial}`);
+    let af = spawnCompgen(['-A', 'file'], partial);
+
     if (this.opts.regexp) {
       af=af.filter(this.testRegexp.bind(this));
     }
@@ -145,19 +172,6 @@ class ParseFilenameViaCompgen extends ParseToken {
     });
     return  {tokens:af,compOpts:this.opts.compOpts}; 
   }
-  complete_xxx(partial){
-    let ad = execCompgenish(`compgen -A directory ${partial}`);
-    let af = execCompgenish(`compgen -A file ${partial}`);
-    af=af.filter((fn)=>{return !ad.includes(fn);});
-    if (this.opts.regexp) {
-      af=af.filter(this.testRegexp.bind(this));
-    }
-    ad.forEach((dn,index)=>{
-      if (dn[dn.length-1]!='/')
-        ad[index]+='/';
-    });
-    return af.concat(ad);
-  }
   parse(path){
     try {
       var realPath = fs.realpathSync(path);
@@ -166,6 +180,13 @@ class ParseFilenameViaCompgen extends ParseToken {
     }
     if (!fs.existsSync(realPath))
       throw new Error(`does not exist: ${path}`);
+
+    if (this.opts._noFiles) {
+      if (!fs.lstatSync(realPath).isDirectory())
+        throw new Error(`is not a directory: ${path}`);
+      return path;
+    }
+
     if (!fs.lstatSync(realPath).isFile())
       throw new Error(`is not a file: ${path}`);
     if (this.opts.regexp)
@@ -176,136 +197,71 @@ class ParseFilenameViaCompgen extends ParseToken {
     return path;
   }
   hint(){
-    return 'Filename';
+    if (this.opts._noFiles)
+      return 'Directory';
+    else 
+      return 'Filename';
   }
 }
 ParseFilenameViaCompgen.defaultOpts={
-  regexp:null, compOpts:null
+  _noFiles:false, // to turn this into a directory selector instead of file selector
+  regexp:null, 
+  compOpts:{
+    bashdefault:false,
+    default:false,
+    dirnames:false,
+    filenames:true,
+    noquote:false,
+    nosort:false,
+    nospace:true,
+    plusdirs:true,
+  }
 };
 
+class ParseDirectorynameViaCompgen extends ParseFilenameViaCompgen {
+  constructor(){
+    let opts={...ParseFilenameViaCompgen.defaultOpts};
+    opts._noFiles=true;
+    super(opts);
+  }
+  // inherit everything
+}
 
+class ParseViaCompgen extends ParseToken {
+  constructor(compgenArgs, regexp, hint=null){
+    super();
+    this.compgenArgs=compgenArgs;
+    this.hint=hint;
+    if (regexp instanceof RegExp)
+      this.regexp=regexp;
+    else 
+      throw new Error(`${regexp} is not instanceof RegExp`);
+  }
 
-// class ParseDirectory extends ParseToken {
-//   constructor(opts=ParseDirectory.defaultOpts){
-//     super();
-//     this.opts={...ParseDirectory.defaultOpts, ...opts};
-//   }
-//   parse(w){
-//     let dirpath = this.opts.prefix+w;
-//     if (fs.existsSync(dirpath))
-//       throw new Error(`does not exist: ${dirpath}`);
-//     if (!fs.lstatSync(dirpath).isDirectory())
-//       throw new Error(`is not a directory: ${dirpath}`);
-//     if (this.opts.returnWithPrefix)
-//       return dirpath;
-//     else return w; 
-//   }
-//   completion(w) {
-//     function pref(x){ return this.opts.prefix+x; }
-//     function removePrefix(x) {
-//       return x.slice(this.opts.prefix.length);
-//     }
-//     //let dirpath = this.opts.prefix+w;
-//     let candidates=[];
-//     let ludir=null,partial='';
-//     //if (fs.existsSync(pref(w)) && fs.lstatSync(pref(w)).isDirectory()){
-//     //  candidates.push(w);
-//     //  ludir=pref(w);
-//     //} else 
-//     {
-//       let parts=ludir.split('/');
-//       partial = parts.splice(-1,1);
-//       ludir = parts.join('/');
-//     }
-//     if (!fs.existsSync(ludir) || !fs.lstatSync(ludir))
-//       throw new Error(`(${ludir}) is not a valid directory`);
-//     let dirent = fs.readdirSync(ludir,{withFileTypes:true});
-//     //let dirent = dir.readSync();
-//     for (const d of dirent){
-//       if (d.isDirectory())
-//         if (removePrefix(d))
-//           candidates.push(removePrefix(d));
-//     }
-//     return candidates;
-//   }
-//   hint(){ return super.hint() || 'Directory'; }
-// }
-// ParseDirectory.defaultOpts={
-//   prefix:'',
-//   returnWithPrefix:true
-// };
-
-// class ParseFile extends ParseToken {
-//   constructor(opts=ParseFile.defaultOpts){
-//     super();
-//     this.opts={...ParseFile.defaultOpts, ...opts};
-//   }
-//   parse(w){
-//     let path = this.opts.prefix+w;
-//     if (fs.existsSync(path))
-//       throw new Error(`does not exist: ${path}`);
-//     if (!fs.lstatSync(dirpath).isFile())
-//       throw new Error(`is not a file: ${path}`);
-//     if (this.opts.returnWithPrefix)
-//       return path;
-//     else return w; 
-//   }
-//   completion(w) {
-//     function pref(x){ return this.opts.prefix+x; }
-//     function removePrefix(x) {
-//       return x.slice(this.opts.prefix.length);
-//     }
-//     function addBackslash(x) {
-//       if (x && x[x.length-1]!='/')
-//         x+='/';
-//       return x;
-//     }
-//     //let dirpath = this.opts.prefix+w;
-//     let candidates=[];
-//     let ludir=null,partial='';
-//     if (fs.existsSync(pref(w)) && fs.lstatSync(pref(w)).isDirectory()){
-//       let cand=removePrefix(addBackslash(pref(w)));
-//       candidates.push(cand);
-//       ludir=addBackslash(pref(w));
-//     } else {      
-//       let parts=ludir.split('/');
-//       partial = parts.splice(-1,1);
-//       ludir = addBackslash(parts.join('/'));
-//     }
-//     if (!fs.existsSync(ludir) || !fs.lstatSync(ludir).isDirectory())
-//       throw new Error(`(${ludir}) is not a valid directory`);
-//     let dirent = fs.readdirSync(ludir,{withFileTypes:true});
-//     for (const d of dirent){
-//       if (d.isDirectory()){
-//         if (removePrefix(addBackslash(d.name)))
-//           candidates.push(removePrefix(addBackslash(d.name)));
-//       } else if (d.isFile()) {
-//         if (!this.opts.filenameRegexp
-//           || this.opts.filenameRegexp.test(d.name))
-//           if (removePrefix(d.name))
-//             candidates.push(removePrefix(d.name));
-//       }
-//     }
-//     return candidates;
-//   }
-//   hint(){ 
-//     let r=super.hint();
-//     if (!r){
-//       if (!this.opts.filenameRegexp)
-//         return "File";
-//       else 
-//         return `File regexp:${this.opts.filenameRegexp.toString()}`; 
-//     }
-//   }
-// }
-// ParseFile.defaultOpts={
-//   prefix:'',
-//   returnWithPrefix:true,
-//   filenameRegexp:null,
-// };
+  complete(partial){
+    let cands=spawnCompgen(this.CompgenArgs, partial);
+    if (this.regexp)
+      cands.filter(this.regexp.test.bind(this.regexp));
+    return cands;
+  }
+  parse(token){
+    let cands=spawnCompgen(this.CompgenArgs, token);
+    if (!cands.includes(token))
+      throw new Error(`${token} is not a valid token`);
+    return token;
+  }
+  hint(){
+    if (!this.hint)
+      return this.compgenArgs.join(' ');
+    else
+      return this.hint;
+  }
+}
 
 exports.ParseToken=ParseToken;
 exports.ParseInt=ParseInt;
 exports.ParseBigInt=ParseBigInt;
 exports.ParseFloat=ParseFloat;
 exports.ParseFilenameViaCompgen=ParseFilenameViaCompgen;
+exports.ParseDirectorynameViaCompgen=ParseDirectorynameViaCompgen;
+exports.ParseViaCompgen=ParseViaCompgen;
