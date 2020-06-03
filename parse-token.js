@@ -24,10 +24,11 @@ class ParseToken {
   constructor(){}
   parse(w){ return w;}
   // eslint-disable-next-line no-unused-vars
-  completion(w) { return []; }
+  completions(partial) { return []; }
   // eslint-disable-next-line no-unused-vars
-  hint(w){ return null; }
+  hint(w){ return 'String'; }
 }
+
 
 class ParseInt extends ParseToken {
   constructor(){super();}
@@ -107,6 +108,34 @@ function spawnCompgen(args,partial){
 }
 
 
+const validCompOptions = [
+  "bashdefault",
+  "default",
+  "dirnames",
+  "filenames",
+  "noquote",
+  "nosort",
+  "nospace",
+  "plusdirs",
+];
+Object.freeze(validCompOptions);
+
+function defaultCompOpts(){
+  let r={};
+  for (const k of validCompOptions)
+    r[k]=false;
+  return r;
+}
+
+function assignCompOpts(dest,src){
+  for (const k of Object.keys(src)){
+    if (!validCompOptions.includes(k))
+      throw new Error(`${k} is not a valid compopt option, `+
+      `must be one of ${JSON.stringify(validCompOptions,null,2)}`);
+    dest[k]=!!src[k];
+  }
+}
+
 /////////////////////////////////////
 // For details on compgen see
 // https://www.gnu.org/software/bash/manual/html_node/Programmable-Completion-Builtins.html
@@ -115,22 +144,11 @@ class ParseFilenameViaCompgen extends ParseToken {
   constructor(opts=ParseFilenameViaCompgen.defaultOpts){
     super();
     this.opts={...ParseFilenameViaCompgen.defaultOpts};
+    this.opts.compOpts={...ParseFilenameViaCompgen.defaultOpts.compOpts};
     if (opts._noFiles)
       this.opts._noFiles=true;
     if (opts.compOpts){
-      if (typeof opts.compOpts=='string'){
-        if (opts.compOpts=='disable')
-          this.opts.compOpts=null;
-        else 
-          throw new Error(`${opts.compOpts} is not a valid string value `
-            + `for opt.compOpts, must be 'disable' or an object with options`);
-      } else {
-        for (const k of Object.keys(opts.compOpts))
-          if (Object.keys(this.opts.compOpts).includes(k))
-            this.opts.compOpts[k]=!!opts.compOpts[k];
-          else 
-            throw new Error(`${k} is not a valid compopt option`);
-      }
+      assignCompOpts(this.opts.compOpts,opts.compOpts);
     }
     if (opts.regexp)
       if (opts.regexp instanceof RegExp)
@@ -148,7 +166,7 @@ class ParseFilenameViaCompgen extends ParseToken {
     fn=ParseFilenameViaCompgen.getFilePart(fn);
     return this.opts.regexp.test(fn);
   }
-  complete(partial){
+  completions(partial){
     if (this.opts._noFiles)
       return {tokens:[],compOpts:this.opts.compOpts};
 
@@ -198,7 +216,7 @@ class ParseFilenameViaCompgen extends ParseToken {
   }
   hint(){
     if (this.opts._noFiles)
-      return 'Directory';
+      return 'Directoryname';
     else 
       return 'Filename';
   }
@@ -217,6 +235,7 @@ ParseFilenameViaCompgen.defaultOpts={
     plusdirs:true,
   }
 };
+Object.freeze(ParseFilenameViaCompgen.defaultOpts);
 
 class ParseDirectorynameViaCompgen extends ParseFilenameViaCompgen {
   constructor(){
@@ -228,26 +247,29 @@ class ParseDirectorynameViaCompgen extends ParseFilenameViaCompgen {
 }
 
 class ParseViaCompgen extends ParseToken {
-  constructor(compgenArgs, regexp, hint=null){
+  constructor(opts=ParseViaCompgen.defaultOpts){
     super();
-    this.compgenArgs=compgenArgs;
-    this.hint=hint;
-    if (regexp instanceof RegExp)
-      this.regexp=regexp;
-    else 
-      throw new Error(`${regexp} is not instanceof RegExp`);
+    this.opts={...ParseViaCompgen.defaultOpts,...opts};
+    this.opts.compgenArgs = this.opts.compgenArgs.slice();
+    this.opts.compOpts = {...ParseViaCompgen.defaultOpts.compOpts};
+    if (opts.compOpts)
+      assignCompOpts(this.opts.compOpts,opts.compOpts);
+    if (this.opts.regexp && !(this.opts.regexp instanceof RegExp))
+      throw new Error(`${this.opts.regexp} is not instanceof RegExp`);
   }
-
-  complete(partial){
+  completions(partial){
     let cands=spawnCompgen(this.CompgenArgs, partial);
     if (this.regexp)
       cands.filter(this.regexp.test.bind(this.regexp));
-    return cands;
+    return {tokens:cands,compOpts:this.opts.compOpts};
   }
   parse(token){
+    if (!this.regexp.test(token))
+      throw new Error(`token (${token}) does not satisfy regexp ${this.regexp}`);
     let cands=spawnCompgen(this.CompgenArgs, token);
     if (!cands.includes(token))
-      throw new Error(`${token} is not a valid token`);
+      throw new Error(
+        `token (${token}) is not among those returned by compgen ${this.compgenArgs}`);
     return token;
   }
   hint(){
@@ -257,7 +279,16 @@ class ParseViaCompgen extends ParseToken {
       return this.hint;
   }
 }
+ParseViaCompgen.defaultOpts={
+  hint:null,
+  regexp:null, 
+  compgenArgs:[],
+  compOpts:defaultCompOpts(),
+};
+Object.freeze(ParseViaCompgen.defaultOpts);
 
+exports.defaultCompOpts=defaultCompOpts;
+exports.assignCompOpts=assignCompOpts;
 exports.ParseToken=ParseToken;
 exports.ParseInt=ParseInt;
 exports.ParseBigInt=ParseBigInt;

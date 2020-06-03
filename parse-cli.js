@@ -1,8 +1,42 @@
 `strict`;
 //const assert = require('assert');
+const parseToken = require('./parse-token.js');
 
 const symInt = Symbol ('symInt');
+const symBigInt = Symbol ('symBigInt');
 const symFloat = Symbol ('symFloat');
+const symString = Symbol ('symString');
+const symFilename = Symbol ('symFilename');
+const symDirectoryname = Symbol ('symDirectoryname');
+
+const symbolToParserMap=Map([
+  [symInt,parseToken.ParseInt.bind(parseToken)],
+  [symBigInt,parseToken.ParseBigInt.bind(parseToken)],
+  [symFloat,parseToken.ParseFloat.bind(parseToken)],
+  [symString,parseToken.ParseToken.bind(parseToken)],
+  [symFilename,parseToken.ParseFilenameViaCompgen.bind(parseToken)],
+  [symDirectoryname,parseToken.ParseDirectorynameViaCompgen.bind(parseToken)],
+]);
+
+const stringToSymbolMap=Map([
+  ["Int",symInt],
+  ["BigInt",symBigInt],
+  ["Float",symFloat],
+  ["String",symString],
+  ["Filename",symFilename],
+  ["Directoryname",symDirectoryname],
+]);
+
+function ObjectEqSubShallow(obj,sub){
+  let r=true;
+  for (const k of Object.keys(sub))
+    r = r && sub[k]==obj[k];
+  return r;
+}
+
+function ObjectEqShallow(a,b){
+  return ObjectEqSubShallow(a,b) && ObjectEqSubShallow(b,a);
+}
 
 function deepCopyEnumerable(x){
   if (x===undefined)
@@ -48,7 +82,7 @@ class ParseCli {
     this._table=table;
   }
   //table(){return this._table; }
-  setWords(words, completionCWord=-1){
+  setWords(words, completionCWord=-1, defaultCompOpts=parseToken.defaultCompOpts()){
     if (!words || !Array.isArray(words) 
     || !words.every((x)=>{return typeof x=='string' && x;}))
       throw new Error('input words must be array of non empty strings');
@@ -66,13 +100,17 @@ class ParseCli {
       words:words.slice(),
       wordsIn:Object.freeze(words.slice()),
     };
-    if (completionCWord>=0)
+    if (completionCWord>=0){
       this.completion={
         active:(completionCWord>=0),
         cword:completionCWord,
         done:false,
-        candidates:[],
+        candidates:null,
+        candsWithCompOpts:null, // {tokens:[...],compOpts:{...}}
+        defaultCompOpts:parseToken.defaultCompOpts(),
       };
+      parseToken.assignCompOpts(this.completion.defaultCompOpts, defaultCompOpts);
+    }
   }
 
   static deepFreezeTable(t){
@@ -167,12 +205,12 @@ class ParseCli {
   completionSetDone(){
     return this.completion.done=true;
   }
-  completionAddCand(c){
-    if (Array.isArray(c))
-      this.completion.candidates.concat(c);
-    else
-      this.completion.candidates.push(c);
-  }
+  // completionAddCand(c){
+  //   if (Array.isArray(c))
+  //     this.completion.candidates.concat(c);
+  //   else
+  //     this.completion.candidates.push(c);
+  // }
   completionGetCandidates(){
     return this.completion.candidates;
   }
@@ -197,33 +235,100 @@ class ParseCli {
       throw new Error(`unexpected type ${t}`);  
     }
   }
+  parseToken(...args){
+    if (args.length==1){
+      // expecting a simple string, e.g. flag or lut key
+      if (typeof args[0]!='string')
+        // programming logic error, not parse error
+        throw new Error(`expecting type string but found ${args[0]}`);
+      return args[0];
+    } else {
+      // expecting two args, first is string token, second is symbol|instanceof ParseToken
+      if (args.length!=2)
+        throw new Error('expecting 2 args');
+      if (typeof args[0]!='string')
+        // programming logic error, not parse error
+        throw new Error(`expecting first arg type string but found ${args[0]}`);
+      if (typeof args[1]!='symbol' && !(args[1] instanceof parseToken.ParseToken))
+        // programming logic error, not parse error
+        throw new Error(`invalid second arg ${args[1]}`);
+      let pt = args[1];
+      if (typeof pt=='symbol'){
+        if (!symbolToParserMap.has(pt))
+          throw (`symbol ${pt} not in symbolToParserMap`);
+        pt=symbolToParserMap.get(pt);
+      }
+      return pt.parse(args[0]);
+    }
+  }
+  completionAddCand(...args){
+    if (args.length==1){
+      // expecting a simple string,
+      if (typeof args[0]!='string')
+        // programming logic error, not parse error
+        throw new Error(`expecting type string but found ${args[0]}`);
+      this.completion.candidates.push(args[0]);
+    } else {
+      // expecting two args, first is string partial token, second is symbol|instanceof ParseToken
+      if (args.length!=2)
+        throw new Error('expecting 2 args');
+      if (typeof args[0]!='string')
+        // programming logic error, not parse error
+        throw new Error(`expecting first arg type string but found ${args[0]}`);
+      if (typeof args[1]!='symbol' && !(args[1] instanceof parseToken.ParseToken))
+        // programming logic error, not parse error
+        throw new Error(`invalid second arg ${args[1]}`);
+      let pt = args[1];
+      if (typeof pt=='symbol'){
+        if (!symbolToParserMap.has(pt))
+          throw (`symbol ${pt} not in symbolToParserMap`);
+        pt=symbolToParserMap.get(pt);
+      }
+      let res = pt.complete(args[0]);
+      if (Array.isArray(res)) {
+        if (this.completion.candsWithCompOpts){
+          
+        }
+      }
+      if ((Array.isArray(res) 
+          && this.completion.candidates 
+          && this.completion.candidates.length)
+          || (this.completion.)
+// refridgerator broken!!!  IWOZERE
+
+    }
+
+  }
   parsePositionals(args,acc=[]){
     let word=this.nextWord();
     if (!args.length)
       return acc;
     if (this.completionDo()){
-      if (typeof args[0] =='symbol') 
-        this.completionAddCand(
-          this.convertType(word,args[0],true));
-      else // function
-        this.completionAddCand((args[0])(word,args[0],true));
+      this.completionAddCand(word,args[0]);      
+      // if (typeof args[0] =='symbol') 
+      //   this.completionAddCand(
+      //     this.convertType(word,args[0],true));
+      // else // function
+      //   this.completionAddCand((args[0])(word,args[0],true));
       this.completionSetDone();
       return null;
     }
-    if (!word)
-      throw this.createParseError('premature end of input');
+    acc.push(this.parseToken(word,args[0]));
+    // if (!word)
+    //   throw this.createParseError('premature end of input');
 
-    if (typeof args[0] =='symbol') {
-      acc.push(this.convertType(word,args[0]));
-    } else {
-      if (!word)
-        throw this.createParseError('missing positional argument');
-      acc.push((args[0])(word));
-    }
+    // if (typeof args[0] =='symbol') {
+    //   acc.push(this.convertType(word,args[0]));
+    // } else {
+    //   if (!word)
+    //     throw this.createParseError('missing positional argument');
+    //   acc.push((args[0])(word));
+    // }
     this.popWord();
     return this.parsePositionals(args.slice(1),acc);
   }
   parseFlags(flags,acc=[]){
+    // flags is array of [string,nullish|symbol|instanceof ParseToken]
     while (this.nextWord()){
       let word=this.nextWord();
       if (this.completionDo()){
@@ -242,27 +347,28 @@ class ParseCli {
       word=this.nextWord();
       if (this.completionDo()){
         if (item[1]){
-          if (typeof item[1]=='symbol'){
-            this.completionAddCand(
-              this.convertType(word,item[1], true));
-          } else {
-            this.completionAddCand((item[1])(word, true));
-          }
+          this.completionAddCand(word,item[1]);
+          // if (typeof item[1]=='symbol'){
+          //   this.completionAddCand(
+          //     this.convertType(word,item[1], true));
+          // } else {
+          //   this.completionAddCand((item[1])(word, true));
+          // }
+          this.completionSetDone();
+          return;
         }
-        this.completionSetDone();
-        return;
       }
       let value=null;
       if (item[1]){
-        if (typeof item[1]=='symbol'){
-          value = this.convertType(word,item[1]);
-        } else {
-          value = (item[1])(word);
-        }
+        value = this.parseToken(word, item[1]);
+        // if (typeof item[1]=='symbol'){
+        //   value = this.convertType(word,item[1]);
+        // } else {
+        //   value = (item[1])(word);
+        // }
+        this.popWord();
       }
-      this.popWord();
-      if (value)
-        acc.push([item[0],value]);      
+      acc.push([item[0],value]);      
     }
     return acc;
   }
