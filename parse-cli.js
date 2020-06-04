@@ -8,6 +8,10 @@ const symFloat = Symbol ('symFloat');
 const symString = Symbol ('symString');
 const symFilename = Symbol ('symFilename');
 const symDirectoryname = Symbol ('symDirectoryname');
+const { loggerSync } = require('./logger.js');
+
+
+
 
 const symbolToParserMap=Map([
   [symInt,parseToken.ParseInt.bind(parseToken)],
@@ -27,15 +31,15 @@ const stringToSymbolMap=Map([
   ["Directoryname",symDirectoryname],
 ]);
 
-function ObjectEqSubShallow(obj,sub){
+function objectEqSubShallow(obj,sub){
   let r=true;
   for (const k of Object.keys(sub))
     r = r && sub[k]==obj[k];
   return r;
 }
 
-function ObjectEqShallow(a,b){
-  return ObjectEqSubShallow(a,b) && ObjectEqSubShallow(b,a);
+function objectEqShallow(a,b){
+  return objectEqSubShallow(a,b) && objectEqSubShallow(b,a);
 }
 
 function deepCopyEnumerable(x){
@@ -215,33 +219,32 @@ class ParseCli {
     return this.completion.candidates;
   }
 
-  convertType(w,t, completionDo=false){
-    // When completionDo is true, return array of candidates matching w,
-    // currently no action for completionDo,
-    // but will be for, e.g. Symbol('dir')
-    if (completionDo)
-      return [];
-    switch (t){
-    case symInt:
-      if (!w || !(/^-?\d+$/.test(w)) || isNaN(w))
-        throw this.createParseError(`not an integer ${w}`);
-      return Number(w);
-    case symFloat:
-      if (!w || (isNaN(w))) 
-        throw this.createParseError(`not a float ${w}`);
-      return Number(w);
-    default:
-      // also is parse error if w is empty, but unknown symbol takes precedence 
-      throw new Error(`unexpected type ${t}`);  
-    }
-  }
-  parseToken(...args){
+  // convertType(w,t, completionDo=false){
+  //   // When completionDo is true, return array of candidates matching w,
+  //   // currently no action for completionDo,
+  //   // but will be for, e.g. Symbol('dir')
+  //   if (completionDo)
+  //     return [];
+  //   switch (t){
+  //   case symInt:
+  //     if (!w || !(/^-?\d+$/.test(w)) || isNaN(w))
+  //       throw this.createParseError(`not an integer ${w}`);
+  //     return Number(w);
+  //   case symFloat:
+  //     if (!w || (isNaN(w))) 
+  //       throw this.createParseError(`not a float ${w}`);
+  //     return Number(w);
+  //   default:
+  //     // also is parse error if w is empty, but unknown symbol takes precedence 
+  //     throw new Error(`unexpected type ${t}`);  
+  //   }
+  // }
+  static checkArgsParseOrCompletion(...args){
     if (args.length==1){
       // expecting a simple string, e.g. flag or lut key
       if (typeof args[0]!='string')
         // programming logic error, not parse error
         throw new Error(`expecting type string but found ${args[0]}`);
-      return args[0];
     } else {
       // expecting two args, first is string token, second is symbol|instanceof ParseToken
       if (args.length!=2)
@@ -256,48 +259,72 @@ class ParseCli {
       if (typeof pt=='symbol'){
         if (!symbolToParserMap.has(pt))
           throw (`symbol ${pt} not in symbolToParserMap`);
+      }
+    }
+  }
+  parseToken(...args){
+    ParseCli.checkArgsParseOrCompletion(...args);
+    if (args.length==1){
+      return args[0];
+    } else {
+      // expecting two args, first is string token, second is symbol|instanceof ParseToken
+      let pt = args[1];
+      if (typeof pt=='symbol'){
         pt=symbolToParserMap.get(pt);
       }
       return pt.parse(args[0]);
     }
   }
   completionAddCand(...args){
+    ParseCli.checkArgsParseOrCompletion(...args);
     if (args.length==1){
-      // expecting a simple string,
-      if (typeof args[0]!='string')
-        // programming logic error, not parse error
-        throw new Error(`expecting type string but found ${args[0]}`);
       this.completion.candidates.push(args[0]);
     } else {
       // expecting two args, first is string partial token, second is symbol|instanceof ParseToken
-      if (args.length!=2)
-        throw new Error('expecting 2 args');
-      if (typeof args[0]!='string')
-        // programming logic error, not parse error
-        throw new Error(`expecting first arg type string but found ${args[0]}`);
-      if (typeof args[1]!='symbol' && !(args[1] instanceof parseToken.ParseToken))
-        // programming logic error, not parse error
-        throw new Error(`invalid second arg ${args[1]}`);
       let pt = args[1];
       if (typeof pt=='symbol'){
-        if (!symbolToParserMap.has(pt))
-          throw (`symbol ${pt} not in symbolToParserMap`);
         pt=symbolToParserMap.get(pt);
       }
       let res = pt.complete(args[0]);
-      if (Array.isArray(res)) {
+      if (Array.isArray(res) && res.length) {
+        if (!this.completion.candidates)
+          this.completion.candidates=[];
         if (this.completion.candsWithCompOpts){
-          
+          // these downgrade the non-default compopts
+          loggerSync('silent completion error: grammar needs to be fixed, ' 
+            + 'trying to mix compOpts settings, '
+            + 'changing non-default compOpts to default');
+          this.completion.candidates.concat(this.completion.candsWithCompOpts.tokens);
+          this.completion.candsWithCompOpts=null;
         }
-      }
-      if ((Array.isArray(res) 
-          && this.completion.candidates 
-          && this.completion.candidates.length)
-          || (this.completion.)
-// refridgerator broken!!!  IWOZERE
-
+        this.completion.candidates.concat(res);
+      } else {
+        if (objectEqShallow(this.completion.defaultCompOpts, res.compOpts)){
+          // ignore the compOpts part
+          if (!this.completion.candidates)
+            this.completion.candidates=[];
+          this.completion.candidates.concat(res.tokens);
+        } else {
+          if (this.completion.candsWithCompOpts) {
+            if (objectEqShallow(
+              this.completion.candsWithCompOpts.compOpts,
+              res.compOpts)){
+              this.completion.candsWithCompOpts.tokens.concat(res.tokens);
+            } else {
+              loggerSync('silent completion error: grammar needs to be fixed, ' 
+              + 'trying to mix compOpts settings, '
+              + 'changing compOpts to existing non default compOpts');
+              this.completion.candsWithCompOpts.tokens.concat(res.tokens);  
+            }
+          } else {
+            this.completion.candsWithCompOpts = {
+              tokens:res.tokens.slice(),
+              compOpts:{...res.compOpts}
+            };
+          }
+        } 
+      } // not Array
     }
-
   }
   parsePositionals(args,acc=[]){
     let word=this.nextWord();
@@ -442,14 +469,9 @@ class ParseCli {
     }
   }
 }
-ParseCli.symInt=symInt;
-ParseCli.symFloat=symFloat;
+//ParseCli.symInt=symInt;
+//ParseCli.symFloat=symFloat;
 
-const symbols ={ 
-  symInt:symInt,
-  symFloat:symFloat,
-};
-Object.freeze(symbols);
 
 function parse(table,words){
   let pc = new ParseCli(table,words);
@@ -479,10 +501,19 @@ function completion(table, completionIndex, words, suppressCompletionParseErrors
   positionalValue ::== <any>
 */
 
-
+const symbols={
+  symString:symString,
+  symInt:symInt,
+  symBigInt:symBigInt,
+  symFloat:symFloat,
+  symFilename:symFilename,
+  symDirectoryname:symDirectoryname,
+};
+Object.freeze(symbols);
 
 //exports.ParseCli=ParseCli;
 exports.parse=parse;
 exports.completion=completion;
+exports.parseToken=parseToken; // forwarded from parse-token.js 
 exports.symbols=symbols;
-
+exports.loggerSync=loggerSync; // forwarded from logger.js

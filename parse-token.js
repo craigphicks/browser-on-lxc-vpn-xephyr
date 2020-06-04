@@ -2,16 +2,9 @@
 
 const fs = require('fs');
 const cp = require('child_process');
+const { loggerSync } = require('./logger.js');
 //const { execBashScript } = require('./exec-bash-script.js');
 
-async function loggerSync(m){
-  try {
-    var str=`logger -t ${process.argv0} -- ${m}`;
-    cp.execSync(str);
-  } catch (e) {
-    console.error(`Error when executing ${str}, ${e.message}`);
-  }
-}
 
 
 // eslint-disable-next-line no-unused-vars

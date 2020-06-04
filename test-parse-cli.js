@@ -1,14 +1,9 @@
 #!/usr/bin/env node --inspect-brk
 'strict';
 const { 
-  parse, completion, symbols, 
+  parse, completion, symbols, parseToken, 
 } = require('./parse-cli.js');
 
-function parseConfFilename(w,completion=false){
-  if (completion)
-    return [];
-  return w;
-}
 
 function makeRootTable(){
   let table0 = [
@@ -45,7 +40,7 @@ function makeRootTable(){
   let rootTable = {
     flags:[
       ['--log', 0],
-      ['--conf', parseConfFilename],
+      ['--conf', symbols.symFilename],
       ['--help', 0],
     ],
     postitionals:null,
@@ -57,7 +52,7 @@ function makeRootTable(){
 
 const testdata0 = [
   null,
-//  '',
+  //  '',
   'xephyr', 
   'test-env',
   'clip-xfer 0 2', 

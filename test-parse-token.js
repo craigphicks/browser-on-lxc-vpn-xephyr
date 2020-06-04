@@ -32,7 +32,7 @@ async function complete(partial){
   };
 
   let pfn = new pt.ParseFilenameViaCompgen({regexp:/^.+\.js$/,compOpts:compOpts});
-  let r = pfn.complete(partial);
+  let r = pfn.completions(partial);
   let strout='';
   if (Array.isArray(r) || !r.compOpts) {
     // array of tokens
