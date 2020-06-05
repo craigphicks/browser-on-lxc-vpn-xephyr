@@ -17,14 +17,30 @@ class ParseToken {
   constructor(){}
   parse(w){ return w;}
   // eslint-disable-next-line no-unused-vars
-  completions(partial) { return []; }
+  completion(partial) { return []; }
   // eslint-disable-next-line no-unused-vars
   hint(w){ return 'String'; }
 }
 
+class ParseString extends ParseToken {
+  constructor(opts={hint:'hint'}){
+    super();
+    this.opts={...opts};
+  }
+  parse(w){ return w;}
+  completion(partial) { 
+    if (partial[partial.length-1]=='')
+      return ['hint:', this.hint()]; 
+    else
+      return [];
+  }
+  // eslint-disable-next-line no-unused-vars
+  hint(){ return `[[${this.hintStr}]]`; }
+}
 
-class ParseInt extends ParseToken {
-  constructor(){super();}
+
+class ParseInt extends ParseString {
+  constructor(opts={hint:'Int'}){super(opts);}
   parse(w){ 
     if (!(/^-?\d+$/.test(w)) || isNaN(w))
       throw new Error(`not a valid Integer: ${w}`);
@@ -33,24 +49,22 @@ class ParseInt extends ParseToken {
       throw new Error(`Integer magnitude too large ${w}`);
     return Number(w);
   }
-  hint(){ return 'Integer'; }
 }
-class ParseBigInt extends ParseToken {
-  constructor(){super();}
+class ParseBigInt extends ParseString {
+  constructor(opts={hint:'BigInt'}){super(opts);}
   parse(w){ 
     if (!(/^-?\d+$/.test(w)))
       throw new Error(`not a valid BigInt: ${w}`);
     // eslint-disable-next-line no-undef
     return BigInt(w);
   }
-  hint(){ return 'BigInt'; }
 }
 
-class ParseFloat extends ParseToken {
-  constructor(){super();}
+class ParseFloat extends ParseString {
+  constructor(opts={hint:'Float'}){super(opts);}
   parse(w){ 
     if (isNaN(w))
-      throw new Error(`not an valid Float: ${w}`);
+      throw new Error(`not a valid Float: ${w}`);
     let n = Number(w);
     // Beware!
     // Number.MAX_VALUE+1 > Number.MAX_VALUE -> false
@@ -59,7 +73,6 @@ class ParseFloat extends ParseToken {
       throw new Error(`float magnitude too large ${w}`);
     return Number(w);
   }
-  hint(){ return 'Float'; }
 }
 
 // function execCompgenish(cmd,partial){
@@ -159,7 +172,7 @@ class ParseFilenameViaCompgen extends ParseToken {
     fn=ParseFilenameViaCompgen.getFilePart(fn);
     return this.opts.regexp.test(fn);
   }
-  completions(partial){
+  completion(partial){
     if (this.opts._noFiles)
       return {tokens:[],compOpts:this.opts.compOpts};
 
@@ -250,7 +263,7 @@ class ParseViaCompgen extends ParseToken {
     if (this.opts.regexp && !(this.opts.regexp instanceof RegExp))
       throw new Error(`${this.opts.regexp} is not instanceof RegExp`);
   }
-  completions(partial){
+  completion(partial){
     let cands=spawnCompgen(this.CompgenArgs, partial);
     if (this.regexp)
       cands.filter(this.regexp.test.bind(this.regexp));

@@ -9,20 +9,20 @@ const symString = Symbol ('symString');
 const symFilename = Symbol ('symFilename');
 const symDirectoryname = Symbol ('symDirectoryname');
 const { loggerSync } = require('./logger.js');
+const fs = require('fs');
 
 
 
-
-const symbolToParserMap=Map([
-  [symInt,parseToken.ParseInt.bind(parseToken)],
-  [symBigInt,parseToken.ParseBigInt.bind(parseToken)],
-  [symFloat,parseToken.ParseFloat.bind(parseToken)],
-  [symString,parseToken.ParseToken.bind(parseToken)],
-  [symFilename,parseToken.ParseFilenameViaCompgen.bind(parseToken)],
-  [symDirectoryname,parseToken.ParseDirectorynameViaCompgen.bind(parseToken)],
+const symbolToParserMap=new Map([
+  [symInt,parseToken.ParseInt],
+  [symBigInt,parseToken.ParseBigInt],
+  [symFloat,parseToken.ParseFloat],
+  [symString,parseToken.ParseToken],
+  [symFilename,parseToken.ParseFilenameViaCompgen],
+  [symDirectoryname,parseToken.ParseDirectorynameViaCompgen],
 ]);
 
-const stringToSymbolMap=Map([
+const stringToSymbolMap=new Map([
   ["Int",symInt],
   ["BigInt",symBigInt],
   ["Float",symFloat],
@@ -90,10 +90,10 @@ class ParseCli {
     if (!words || !Array.isArray(words) 
     || !words.every((x)=>{return typeof x=='string' && x;}))
       throw new Error('input words must be array of non empty strings');
-    if (completionCWord>words.length){
+    if (completionCWord>words.length+1){
       throw new Error(
         `completion word index (${completionCWord})`
-        +` cannot be greater than the number of words (${words.length})`);
+        +` cannot be greater than the number of words (${words.length})+1`);
     }
     if (completionCWord<-1){
       throw new Error(
@@ -209,14 +209,20 @@ class ParseCli {
   completionSetDone(){
     return this.completion.done=true;
   }
-  // completionAddCand(c){
+  // completionTokenAddCand(c){
   //   if (Array.isArray(c))
   //     this.completion.candidates.concat(c);
   //   else
   //     this.completion.candidates.push(c);
   // }
   completionGetCandidates(){
-    return this.completion.candidates;
+    if (this.completion.candsWithCompOpts)
+      return this.completion.candsWithCompOpts;
+    else 
+      return {
+        tokens: this.completion.candidates || [],
+        compOpts: this.completion.defaultCompOpts,
+      };
   }
 
   // convertType(w,t, completionDo=false){
@@ -270,22 +276,24 @@ class ParseCli {
       // expecting two args, first is string token, second is symbol|instanceof ParseToken
       let pt = args[1];
       if (typeof pt=='symbol'){
-        pt=symbolToParserMap.get(pt);
+        pt=new (symbolToParserMap.get(pt))();
       }
       return pt.parse(args[0]);
     }
   }
-  completionAddCand(...args){
+  completionTokenAddCand(...args){
     ParseCli.checkArgsParseOrCompletion(...args);
     if (args.length==1){
+      if (!this.completion.candidates)
+        this.completion.candidates=[];
       this.completion.candidates.push(args[0]);
     } else {
       // expecting two args, first is string partial token, second is symbol|instanceof ParseToken
       let pt = args[1];
       if (typeof pt=='symbol'){
-        pt=symbolToParserMap.get(pt);
+        pt=new (symbolToParserMap.get(pt))();
       }
-      let res = pt.complete(args[0]);
+      let res = pt.completion(args[0]);
       if (Array.isArray(res) && res.length) {
         if (!this.completion.candidates)
           this.completion.candidates=[];
@@ -298,7 +306,7 @@ class ParseCli {
           this.completion.candsWithCompOpts=null;
         }
         this.completion.candidates.concat(res);
-      } else {
+      } else if (!Array.isArray(res) && res.tokens.length) {
         if (objectEqShallow(this.completion.defaultCompOpts, res.compOpts)){
           // ignore the compOpts part
           if (!this.completion.candidates)
@@ -331,12 +339,12 @@ class ParseCli {
     if (!args.length)
       return acc;
     if (this.completionDo()){
-      this.completionAddCand(word,args[0]);      
+      this.completionTokenAddCand(word,args[0]);      
       // if (typeof args[0] =='symbol') 
-      //   this.completionAddCand(
+      //   this.completionTokenAddCand(
       //     this.convertType(word,args[0],true));
       // else // function
-      //   this.completionAddCand((args[0])(word,args[0],true));
+      //   this.completionTokenAddCand((args[0])(word,args[0],true));
       this.completionSetDone();
       return null;
     }
@@ -361,7 +369,7 @@ class ParseCli {
       if (this.completionDo()){
         for (const [k] of flags){
           if (ParseCli.completionMatch(word,k))
-            this.completionAddCand(k);
+            this.completionTokenAddCand(k);
         }
         return null;
       }
@@ -374,12 +382,12 @@ class ParseCli {
       word=this.nextWord();
       if (this.completionDo()){
         if (item[1]){
-          this.completionAddCand(word,item[1]);
+          this.completionTokenAddCand(word,item[1]);
           // if (typeof item[1]=='symbol'){
-          //   this.completionAddCand(
+          //   this.completionTokenAddCand(
           //     this.convertType(word,item[1], true));
           // } else {
-          //   this.completionAddCand((item[1])(word, true));
+          //   this.completionTokenAddCand((item[1])(word, true));
           // }
           this.completionSetDone();
           return;
@@ -424,7 +432,7 @@ class ParseCli {
     if (this.completionDo()){
       lut.forEach((item)=>{
         if (ParseCli.completionMatch(word,item[0].action.key))
-          this.completionAddCand(item[0].action.key);
+          this.completionTokenAddCand(item[0].action.key);
       });
       return null;
     }
@@ -445,7 +453,7 @@ class ParseCli {
       return {...item[0],...item2Rtn};
     }
   }
-  parse(suppressCompletionParseErrors=false){
+  parse(compErrorHandling=ParseCli.defaultCompletionErrorHandling){
     if (!this._table)
       throw new Error('table not set');
     if (!this.state)
@@ -457,49 +465,172 @@ class ParseCli {
     else {
       try {
         this.parseTableItem(this._table);
-      // eslint-disable-next-line no-empty
       } catch (e) {
         if (e instanceof ParseError){
-          if (!suppressCompletionParseErrors)
-            throw e; 
-        } else 
-          throw e;
+          return {
+            tokens: compErrorHandling.suppressParseError?[]
+              :['<<parse error>>',`<<${e.message}>>`],
+            compOpts: this.opts.defaultCompOpts 
+          };
+        } else {
+          if (compErrorHandling.toLogging)
+            loggerSync(e.message);
+          return {
+            tokens: !compErrorHandling.toOutput?[]
+              :['<<logic error>>',`<<${e.message}>>`],
+            compOpts: this.opts.defaultCompOpts 
+          };
+        }
       }
       return this.completionGetCandidates();
     }
   }
 }
-//ParseCli.symInt=symInt;
-//ParseCli.symFloat=symFloat;
-
+ParseCli.defaultCompletionErrorHandling={
+  toOutput:false,toLogging:true,suppressParseError:false
+};
+Object.freeze(ParseCli.defaultCompletionErrorHandling);
 
 function parse(table,words){
   let pc = new ParseCli(table,words);
   return pc.parse();
 }
 
-function completion(table, completionIndex, words, suppressCompletionParseErrors=true){
-  if (typeof completionIndex != 'number' && completionIndex>=0){
-    throw new Error(
-      `completionIndex argument expecting number>=0 but found ${completionIndex}`);
+// returns two-line string ready to be written to stdout
+// does not throw
+function completion(
+  table, completionIndex, words,
+  completionErrorHandling=ParseCli.defaultCompletionErrorHandling, 
+  outstream=null,writeStreamCallback=null)
+{
+  var ret={
+    tokens:[],
+    compOpts:parseToken.defaultCompOpts()
+  };
+  if (typeof completionIndex != 'number' || completionIndex<0){
+    let str=`<<completionIndex argument expecting number>=0 but found ${completionIndex}>>`;
+    ret.tokens=[
+      '<<*logic error*>>',
+      str      
+    ];
+    loggerSync(str);
   }
-  let pc = new ParseCli(table, words,completionIndex);
-  return pc.parse(suppressCompletionParseErrors);
+  try { 
+    let pc = new ParseCli(table, words,completionIndex);
+    ret = pc.parse(completionErrorHandling);
+  } catch (e) {
+    let str=`unexpected error ${e.message}`;
+    ret.tokens=[
+      '<<*logic error*>>',
+      `'${str}'`      
+    ];
+  }
+  // convert to two-line string ready for write to stdout 
+  //let strout = ( "'"+ret.tokens.join("' '") + "'\n" ); // line with tokens
+  let strout = '"c b a"\n';
+  let atmp=[];
+  for (const k in ret.compOpts) {
+    atmp.push(ret.compOpts[k]?'-o':'+o');
+    atmp.push(k);
+  }
+  strout += ( atmp.join(' ') + '\n' ); // line with compopt options
+  if (!outstream)
+    return strout;
+  outstream.write(strout,writeStreamCallback);
 }
 
-/*
-  <returnObject> ::== { 
-    action : { 
-      key: <string>,
-      function: <executable function> | null
-    }
-    flags: [<flagObj>,...] | null,
-    positionals: [<positionalValue>,...] | null,
-    recurse: <returnObject> | null,
+async function completionAsync(
+  ostream, 
+  table, completionIndex, words, 
+  completionErrorHandling=ParseCli.defaultCompletionErrorHandling,
+){
+
+  return await new Promise((resolve)=>{
+    completion(
+      table, completionIndex, words,
+      completionErrorHandling,
+      ostream,(e)=>{
+        if (e) 
+          loggerSync(`unexpected error writing ostream: ${e.messsage}`);
+        resolve();
+      });
+  });
+}
+
+function generateCompletionInterfaceScript(
+  writeFilename,
+  mnemonic,
+  userCmd=null,
+  trueCmd=null,
+  opts={dbg:false,loggerDbgInitialValue:0})
+{
+  if (!mnemonic || ! /^[_a-z][_a-z0-9]*$/i.test(mnemonic))
+    throw Error(`illegal mnemonic ${mnemonic}`);
+  if (userCmd && !/^[a-z][-_a-z0-9]*$/i.test(mnemonic))
+    throw Error(`illegal userCmd ${userCmd}`);
+  let whatsthis=process.argv0;
+  let Comp_CompFn_DebugVar=`${mnemonic}_DEBUG`;
+  let Comp_CompFnName=`_${mnemonic}_completion`;
+  let Comp_UserCmd=userCmd||mnemonic;
+  let Comp_TrueCmd=trueCmd||Comp_UserCmd;
+  if (opts.dbg){
+    console.err(`Comp_CompFn_DebugVar=${Comp_CompFn_DebugVar}`);
+    console.err(`Comp_CompFnName=${Comp_CompFnName}`);
+    console.err(`Comp_UserCmd=${Comp_UserCmd}`);
+    console.err(`Comp_TrueCmd=${Comp_TrueCmd}`);
   }
-  flagObj ::== { key:<string>, value: <any> }
-  positionalValue ::== <any>
-*/
+  let script=`\
+#!/bin/bash
+
+echo Comp_CompFn_DebugVar="${Comp_CompFn_DebugVar}"
+echo Comp_CompFnName="${Comp_CompFnName}"
+echo Comp_UserCmd="${Comp_UserCmd}"
+echo Comp_TrueCmd="${Comp_TrueCmd}"
+
+${Comp_CompFn_DebugVar}=${opts.loggerDbgInitialValue?'1':'0'}
+complete -r ${Comp_UserCmd}
+unset -f ${Comp_CompFnName}
+
+function ${Comp_CompFnName} {
+  local PASSED_COMP_OPTS=(), compopt_rtn='not set' ;
+  logger -t "${Comp_CompFnName}" -- "COMP_CWORD=\${COMP_CWORD}, COMP_WORDS=\${COMP_WORDS[*]}" 
+  while true; do 
+    IFS='\t\n' read -ra COMPREPLY
+    if [[ \${${Comp_CompFn_DebugVar}} -ne 0 ]] ; then 
+      logger -t "${Comp_CompFnName}" -- "COMPREPLY=\${COMPREPLY[*]}"
+    fi
+    read -ra PASSED_COMP_OPTS
+    if [[ \${${Comp_CompFn_DebugVar}} -ne 0 ]] ; then 
+      logger -t "${Comp_CompFnName}" -- "#PASSED_COMP_OPTS=\${#PASSED_COMP_OPTS[@]}" 
+      logger -t "${Comp_CompFnName}" -- "PASSED_COMP_OPTS=\${PASSED_COMP_OPTS[*]}"
+    fi
+    break
+  done< <(${Comp_TrueCmd} __completion__ \${COMP_CWORD} \${COMP_WORDS[@]} 2>/dev/null)   
+  if [[ \${#PASSED_COMP_OPTS[@]} -ne 0 ]] ; then 
+    compopt \${PASSED_COMP_OPTS[*]} ${Comp_UserCmd}
+    compopt_rtn=$?
+    logger -t "${Comp_CompFnName}" -- "compopt returned \${compopt_rtn}"
+  fi
+  logger -t "${Comp_CompFnName}" -- "current opts=$(compopt)" 
+  return 0
+}
+declare -f ${Comp_CompFnName}
+complete -F ${Comp_CompFnName} "${Comp_UserCmd}"
+complete -p | grep ${Comp_UserCmd}
+${Comp_UserCmd==Comp_TrueCmd?'':`alias ${Comp_UserCmd}="${Comp_TrueCmd}"`}  
+alias | grep ${Comp_UserCmd}
+
+`;
+  if (opts.dbg)
+    console.error(script);
+  if (!writeFilename)
+    console.log(script);
+  else if (typeof writeFilename=='string')
+    fs.writeFileSync(writeFilename,script);
+  else 
+    throw new Error(`illegal value for parameter filename: ${writeFilename}`);
+}
+
 
 const symbols={
   symString:symString,
@@ -514,6 +645,8 @@ Object.freeze(symbols);
 //exports.ParseCli=ParseCli;
 exports.parse=parse;
 exports.completion=completion;
+exports.completionAsync=completionAsync;
 exports.parseToken=parseToken; // forwarded from parse-token.js 
 exports.symbols=symbols;
 exports.loggerSync=loggerSync; // forwarded from logger.js
+exports.generateCompletionInterfaceScript=generateCompletionInterfaceScript;

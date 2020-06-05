@@ -1,8 +1,15 @@
 #!/usr/bin/env node --inspect-brk
+/* eslint-disable no-unused-vars */
 'strict';
 const { 
-  parse, completion, symbols, parseToken, 
+  parse, completion, symbols, parseToken, loggerSync 
 } = require('./parse-cli.js');
+
+// exports.parse=parse;
+// exports.completion=completion;
+// exports.parseToken=parseToken; // forwarded from parse-token.js 
+// exports.symbols=symbols;
+// exports.loggerSync=loggerSync; // forwarded from logger.js
 
 
 function makeRootTable(){
@@ -39,7 +46,7 @@ function makeRootTable(){
 
   let rootTable = {
     flags:[
-      ['--log', 0],
+      ['--log', symbols.symDirectoryname],
       ['--conf', symbols.symFilename],
       ['--help', 0],
     ],
@@ -49,10 +56,11 @@ function makeRootTable(){
   return rootTable;
 }
 
-
 const testdata0 = [
   null,
   //  '',
+  '--log /tmp/',
+  '--conf test-parse-cli.js',
   'xephyr', 
   'test-env',
   'clip-xfer 0 2', 
@@ -60,6 +68,7 @@ const testdata0 = [
   'config-ssh',
   'config-pulse-audio',
   'delete-own-config-files', 
+  '--conf test-parse-cli.js anac-safe sshfs-umount'
 ];
 
 const rootTable=makeRootTable();
@@ -69,7 +78,7 @@ for (const str of testdata0) {
       'zero length string is not alowable test data, use null instead');
   const a = !str ? [] : str.split(/\s+/);
   // eslint-disable-next-line no-constant-condition
-  if (false) {
+  if (true) {
     console.error(`---> parse ${str}`);
     let testParseItem = { type:'parse', input: a};
     try {
@@ -92,3 +101,27 @@ for (const str of testdata0) {
     console.log(JSON.stringify(testCompItem,null,2));
   }
 }
+
+
+// async function main_sub(){  
+//   switch (process.argv[2]){
+//   case 'completion':
+//     //if (process.argv[3]!=process.argv.length-4)
+//     //  throw new Error('something wrong');
+//     await completion(process.argv.slice(5));
+//     break;
+//   default:
+//     await parse(process.argv[2]);
+//   }
+// }
+
+// async function main(){
+//   try {
+//     await main_sub();
+//     //await writeStdOut("SUCCESS");
+//   } catch(e) {
+//     await logger('testParseToken', `test-parse-token.js: ${e.message}`);
+//   }
+// }
+
+// main();
