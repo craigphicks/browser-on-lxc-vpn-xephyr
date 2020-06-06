@@ -6,6 +6,7 @@ const {
   completion, 
   completionAsync, 
   symbols, loggerSync,
+  defaultCompletionErrorHandling,
   generateCompletionInterfaceScript
 } = require('./parse-cli.js');
 const pt = require('./parse-token.js');
@@ -40,7 +41,7 @@ async function main_sub(){
       'testParseCliCl',
       'test-parse-cli-cl',
       'node ./test-parse-cli-cl.js',
-      {loggerDbgInitialValue:1}
+      {loggerDbgInitialValue:2}
     );
     // the following is just for debugging 
     generateCompletionInterfaceScript(
@@ -48,21 +49,20 @@ async function main_sub(){
       'testParseCliCl_i',
       'test-parse-cli-cl-i',
       'node --inspect-brk ./test-parse-cli-cl.js',
-      {loggerDbgInitialValue:1}
+      {loggerDbgInitialValue:2}
     );
     break;
   }
   case '__completion__':{
     //if (process.argv[3]!=process.argv.length-4)
     //  throw new Error('something wrong');
-    let completionErrorHandling={
-      toOutput:true,
-      toLogging:true,
-      suppressParseError:false
-    };
-    let cword = Number(process.argv[3]);
+    let eh={...defaultCompletionErrorHandling};
+    eh.parseErrorToLogging=true; 
+    //  errorToOutput:true,errorToLogging:true,
+    //  parseErrorToOutput:true,parseErrorToLogging:false,
+    let cword = Number(process.argv[3]-1);
     let words=process.argv.slice(5);
-    await completionAsync(process.stdout,table,cword,words,completionErrorHandling);
+    await completionAsync(process.stdout,process.stderr,table,cword,words,eh);
     break;
   } 
   default:{

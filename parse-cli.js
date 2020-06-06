@@ -45,7 +45,7 @@ function objectEqShallow(a,b){
 function deepCopyEnumerable(x){
   if (x===undefined)
     throw new Error('undefined value found in tree');
-  if (x===null) 
+  if (x===null)
     return x;
   if (Array.isArray(x)){
     let y=x.slice();
@@ -87,7 +87,7 @@ class ParseCli {
   }
   //table(){return this._table; }
   setWords(words, completionCWord=-1, defaultCompOpts=parseToken.defaultCompOpts()){
-    if (!words || !Array.isArray(words) 
+    if (!words || !Array.isArray(words)
     || !words.every((x)=>{return typeof x=='string' && x;}))
       throw new Error('input words must be array of non empty strings');
     if (completionCWord>words.length+1){
@@ -137,16 +137,16 @@ class ParseCli {
             `recurse value must be array , but is instead `+
             `${JSON.stringify(t.recurse),null,2}`);
       } else
-        return; 
+        return;
       for (let entry of t.recurse) {
         if (!Array.isArray(entry) || entry.length!=2)
           throw new Error('recurse table entry is not array length 2. instead is '
           + JSON.stringify(entry),null,2);
         if (typeof entry[0]=='string')
           entry[0] = {action:{key:entry[0],function:null}};
-        else if (Array.isArray(entry[0]) && entry[0].length==2 && typeof entry[0][0]=='string') 
+        else if (Array.isArray(entry[0]) && entry[0].length==2 && typeof entry[0][0]=='string')
           entry[0] = {action:{key:entry[0][0],function:entry[0][1]}};
-        else if (!(typeof entry[0]=='object' 
+        else if (!(typeof entry[0]=='object'
         && entry[0].action && typeof entry[0].action == 'object'
         && entry[0].action.key && typeof entry[0].action.key=='string'))
           throw new Error(
@@ -163,7 +163,7 @@ class ParseCli {
 
   createParseError(msg) {
     return new ParseError(
-      `"${this.state.completed} (ERR=>) ${this.state.words}", ${msg}`
+      `"${this.state.completed} -ERR- ${this.state.words}", ${msg}`
     );
   }
   wordIndex(){
@@ -184,23 +184,23 @@ class ParseCli {
     this.state.completed.push(this.state.words.splice(0,1));
   }
   completionDo(){
-    return this.completion && this.completion.active 
+    return this.completion && this.completion.active
       && this.completion.cword==this.wordIndex();
   }
   // completionWordToComplete(){
   //   let cword = Math.max(0,this.completion.cword);
   //   if (cword >= this.completion.wordsIn.length)
   //     return '';
-  //   else 
+  //   else
   //     return this.state.wordsIn[cword];
   // }
   static completionMatch(partial,cand){
-    return cand.length >= partial.length 
+    return cand.length >= partial.length
       && cand.substring(0,partial.length)==partial;
   }
   // completionMatch(cand){
   //   let partial = this.completionWordToComplete();
-  //   return cand.length >= partial.length 
+  //   return cand.length >= partial.length
   //     && cand.substring(0,partial.length)==partial;
   // }
   completionDone(){
@@ -218,7 +218,7 @@ class ParseCli {
   completionGetCandidates(){
     if (this.completion.candsWithCompOpts)
       return this.completion.candsWithCompOpts;
-    else 
+    else
       return {
         tokens: this.completion.candidates || [],
         compOpts: this.completion.defaultCompOpts,
@@ -237,12 +237,12 @@ class ParseCli {
   //       throw this.createParseError(`not an integer ${w}`);
   //     return Number(w);
   //   case symFloat:
-  //     if (!w || (isNaN(w))) 
+  //     if (!w || (isNaN(w)))
   //       throw this.createParseError(`not a float ${w}`);
   //     return Number(w);
   //   default:
-  //     // also is parse error if w is empty, but unknown symbol takes precedence 
-  //     throw new Error(`unexpected type ${t}`);  
+  //     // also is parse error if w is empty, but unknown symbol takes precedence
+  //     throw new Error(`unexpected type ${t}`);
   //   }
   // }
   static checkArgsParseOrCompletion(...args){
@@ -278,7 +278,11 @@ class ParseCli {
       if (typeof pt=='symbol'){
         pt=new (symbolToParserMap.get(pt))();
       }
-      return pt.parse(args[0]);
+      try {
+        return pt.parse(args[0]);
+      } catch (e) {
+        throw this.createParseError(e.message);
+      }
     }
   }
   completionTokenAddCand(...args){
@@ -299,7 +303,7 @@ class ParseCli {
           this.completion.candidates=[];
         if (this.completion.candsWithCompOpts){
           // these downgrade the non-default compopts
-          loggerSync('silent completion error: grammar needs to be fixed, ' 
+          loggerSync('silent completion error: grammar needs to be fixed, '
             + 'trying to mix compOpts settings, '
             + 'changing non-default compOpts to default');
           this.completion.candidates.concat(this.completion.candsWithCompOpts.tokens);
@@ -319,10 +323,10 @@ class ParseCli {
               res.compOpts)){
               this.completion.candsWithCompOpts.tokens.concat(res.tokens);
             } else {
-              loggerSync('silent completion error: grammar needs to be fixed, ' 
+              loggerSync('silent completion error: grammar needs to be fixed, '
               + 'trying to mix compOpts settings, '
               + 'changing compOpts to existing non default compOpts');
-              this.completion.candsWithCompOpts.tokens.concat(res.tokens);  
+              this.completion.candsWithCompOpts.tokens.concat(res.tokens);
             }
           } else {
             this.completion.candsWithCompOpts = {
@@ -330,7 +334,7 @@ class ParseCli {
               compOpts:{...res.compOpts}
             };
           }
-        } 
+        }
       } // not Array
     }
   }
@@ -339,8 +343,8 @@ class ParseCli {
     if (!args.length)
       return acc;
     if (this.completionDo()){
-      this.completionTokenAddCand(word,args[0]);      
-      // if (typeof args[0] =='symbol') 
+      this.completionTokenAddCand(word,args[0]);
+      // if (typeof args[0] =='symbol')
       //   this.completionTokenAddCand(
       //     this.convertType(word,args[0],true));
       // else // function
@@ -364,7 +368,7 @@ class ParseCli {
   }
   parseFlags(flags,acc=[]){
     // flags is array of [string,nullish|symbol|instanceof ParseToken]
-    while (this.nextWord()){
+    while (this.completionDo()||this.nextWord()){
       let word=this.nextWord();
       if (this.completionDo()){
         for (const [k] of flags){
@@ -403,7 +407,7 @@ class ParseCli {
         // }
         this.popWord();
       }
-      acc.push([item[0],value]);      
+      acc.push([item[0],value]);
     }
     return acc;
   }
@@ -423,7 +427,7 @@ class ParseCli {
     if (obj.recurse){
       retObj.recurse=this.parseTableRecurse(obj.recurse);
     }
-    return retObj; 
+    return retObj;
   }
 
   parseTableRecurse(lut){
@@ -440,7 +444,10 @@ class ParseCli {
       return null;
     let item = lut.find((x)=>{return (x[0].action.key==word);});
     if (!item) {
-      let keys=lut.reduce((acc,x)=>{acc.push(x[0].action.key);},[]);
+      let keys=lut.reduce((acc,x)=>{
+        acc.push(x[0].action.key); 
+        return acc;
+      },[]);
       throw this.createParseError(`expecting one of ${keys.join(',')}`);
     }
     this.popWord();
@@ -453,7 +460,7 @@ class ParseCli {
       return {...item[0],...item2Rtn};
     }
   }
-  parse(compErrorHandling=ParseCli.defaultCompletionErrorHandling){
+  parse(){
     if (!this._table)
       throw new Error('table not set');
     if (!this.state)
@@ -468,17 +475,11 @@ class ParseCli {
       } catch (e) {
         if (e instanceof ParseError){
           return {
-            tokens: compErrorHandling.suppressParseError?[]
-              :['<<parse error>>',`<<${e.message}>>`],
-            compOpts: this.opts.defaultCompOpts 
+            parseError:e,
           };
         } else {
-          if (compErrorHandling.toLogging)
-            loggerSync(e.message);
           return {
-            tokens: !compErrorHandling.toOutput?[]
-              :['<<logic error>>',`<<${e.message}>>`],
-            compOpts: this.opts.defaultCompOpts 
+            error:e
           };
         }
       }
@@ -486,75 +487,120 @@ class ParseCli {
     }
   }
 }
-ParseCli.defaultCompletionErrorHandling={
-  toOutput:false,toLogging:true,suppressParseError:false
-};
-Object.freeze(ParseCli.defaultCompletionErrorHandling);
 
 function parse(table,words){
   let pc = new ParseCli(table,words);
   return pc.parse();
 }
 
+const defaultCompletionErrorHandling={
+  errorToOutput:true,errorToLogging:true,
+  parseErrorToOutput:true,parseErrorToLogging:false,
+};
+Object.freeze(defaultCompletionErrorHandling);
+
+
 // returns two-line string ready to be written to stdout
 // does not throw
 function completion(
   table, completionIndex, words,
-  completionErrorHandling=ParseCli.defaultCompletionErrorHandling, 
-  outstream=null,writeStreamCallback=null)
+  completionErrorHandling=defaultCompletionErrorHandling,
+  outstream=null,
+  outcb=null,
+  errstream=null,
+  errcb=null)
 {
+
   var ret={
     tokens:[],
-    compOpts:parseToken.defaultCompOpts()
+    compOpts:parseToken.defaultCompOpts(),
+    parseError:null,
+    error:null,
   };
-  if (typeof completionIndex != 'number' || completionIndex<0){
-    let str=`<<completionIndex argument expecting number>=0 but found ${completionIndex}>>`;
-    ret.tokens=[
-      '<<*logic error*>>',
-      str      
-    ];
-    loggerSync(str);
+  if ((!!outstream!=!!outcb) || (!!errstream!=!!errcb)
+  || (!!outstream!=!!errstream)) {
+    ret.error=new Error('streams and callbacks must be all or nothing');
+  } else if (typeof completionIndex != 'number' || completionIndex<0){
+    ret.error=new Error(
+      `completionIndex argument expecting number>=0 but found ${completionIndex}`);
+  } else {
+    try {
+      let pc = new ParseCli(table, words,completionIndex);
+      ret = pc.parse(completionErrorHandling); // set .tokens , .compOpts
+    } catch (e) {
+      ret.error=new Error(`unexpected error: ${e.message}`);
+    }
   }
-  try { 
-    let pc = new ParseCli(table, words,completionIndex);
-    ret = pc.parse(completionErrorHandling);
-  } catch (e) {
-    let str=`unexpected error ${e.message}`;
-    ret.tokens=[
-      '<<*logic error*>>',
-      `'${str}'`      
-    ];
+  if (!outstream)
+    return ret;
+
+  ////////////////////////////////////////
+  // conversion to streams start here
+  let errcbPassed=false;
+  if (ret.error){
+    if (completionErrorHandling.errorToLogging)
+      loggerSync(ret.error.message);
+    if (completionErrorHandling.errorToOutput){
+      errstream.write('\n'+ret.error.message,errcb);
+      errcbPassed=true;
+    }
+  } else if (ret.parseError){
+    if (completionErrorHandling.parseErrorToLogging)
+      loggerSync(ret.parseError.message);
+    if (completionErrorHandling.parseErrorToOutput){
+      errstream.write('\n'+ret.parseError.message+'\n',errcb);
+      //errstream.write('\n01234567890123456789',errcb);
+      errcbPassed=true;
+    }
   }
-  // convert to two-line string ready for write to stdout 
-  //let strout = ( "'"+ret.tokens.join("' '") + "'\n" ); // line with tokens
-  let strout = '"c b a"\n';
+  if (!errcbPassed)
+    errcb();
+  // stdout must always be used to send two lines.
+  // Escape the tokens IFS characters (space,tab.newline)
+  // They should be 'reverse-escaped' on the other side before display,
+  // although it may be rare enough not to matter.
+  // ret.tokens.forEach((v,i)=>{
+  //   // we'll assume there are no already escaped 
+  //   ret.tokens[i]=v.replace(' ','\ ').replace('\t','\\t').replace('\n','\\n');
+  // });
+  // TODO: the above could mess up some 
+  if (!ret.tokens)
+    ret.tokens=[];// hope the by pushing multiple options the prompt is regen'd
+  if (!ret.compOpts)
+    ret.compOpts={};
+  let strout = ( ret.tokens.join(' ') + "\n" ); // line with tokens
   let atmp=[];
   for (const k in ret.compOpts) {
     atmp.push(ret.compOpts[k]?'-o':'+o');
     atmp.push(k);
   }
   strout += ( atmp.join(' ') + '\n' ); // line with compopt options
-  if (!outstream)
-    return strout;
-  outstream.write(strout,writeStreamCallback);
+  outstream.write(strout,outcb);
 }
 
 async function completionAsync(
-  ostream, 
-  table, completionIndex, words, 
-  completionErrorHandling=ParseCli.defaultCompletionErrorHandling,
+  ostream,estream,
+  table, completionIndex, words,
+  completionErrorHandling=defaultCompletionErrorHandling,
 ){
-
-  return await new Promise((resolve)=>{
-    completion(
-      table, completionIndex, words,
-      completionErrorHandling,
-      ostream,(e)=>{
-        if (e) 
-          loggerSync(`unexpected error writing ostream: ${e.messsage}`);
-        resolve();
-      });
-  });
+  let resolve1,resolve2;
+  let p1 = new Promise((r)=>{resolve1=r;});
+  let p2 = new Promise((r)=>{resolve2=r;});
+  completion(
+    table, completionIndex, words,
+    completionErrorHandling,
+    ostream,(e)=>{
+      if (e)
+        loggerSync(`unexpected error writing ostream: ${e.messsage}`);
+      resolve1();
+    },
+    estream,(e)=>{
+      if (e)
+        loggerSync(`unexpected error writing estream: ${e.messsage}`);
+      resolve2();
+    },
+  );
+  await Promise.all([p1,p2]);
 }
 
 function generateCompletionInterfaceScript(
@@ -587,39 +633,42 @@ echo Comp_CompFnName="${Comp_CompFnName}"
 echo Comp_UserCmd="${Comp_UserCmd}"
 echo Comp_TrueCmd="${Comp_TrueCmd}"
 
-${Comp_CompFn_DebugVar}=${opts.loggerDbgInitialValue?'1':'0'}
+${Comp_CompFn_DebugVar}=${opts.loggerDbgInitialValue?opts.loggerDbgInitialValue:'0'}
 complete -r ${Comp_UserCmd}
 unset -f ${Comp_CompFnName}
 
 function ${Comp_CompFnName} {
-  local PASSED_COMP_OPTS=(), compopt_rtn='not set' ;
-  logger -t "${Comp_CompFnName}" -- "COMP_CWORD=\${COMP_CWORD}, COMP_WORDS=\${COMP_WORDS[*]}" 
-  while true; do 
-    IFS='\t\n' read -ra COMPREPLY
-    if [[ \${${Comp_CompFn_DebugVar}} -ne 0 ]] ; then 
+  local PASSED_COMP_OPTS=(), compopt_rtn='not set'
+  local tmperrfile=$(mktemp) 
+  (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
+    logger -t "${Comp_CompFnName}" -- "COMP_CWORD=\${COMP_CWORD}, COMP_WORDS=\${COMP_WORDS[*]}"
+  while true; do
+    read -ra COMPREPLY
+    (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
       logger -t "${Comp_CompFnName}" -- "COMPREPLY=\${COMPREPLY[*]}"
-    fi
     read -ra PASSED_COMP_OPTS
-    if [[ \${${Comp_CompFn_DebugVar}} -ne 0 ]] ; then 
-      logger -t "${Comp_CompFnName}" -- "#PASSED_COMP_OPTS=\${#PASSED_COMP_OPTS[@]}" 
+    if (("\${${Comp_CompFn_DebugVar}}">=2)) ; then 
+      logger -t "${Comp_CompFnName}" -- "#PASSED_COMP_OPTS=\${#PASSED_COMP_OPTS[@]}"
       logger -t "${Comp_CompFnName}" -- "PASSED_COMP_OPTS=\${PASSED_COMP_OPTS[*]}"
     fi
     break
-  done< <(${Comp_TrueCmd} __completion__ \${COMP_CWORD} \${COMP_WORDS[@]} 2>/dev/null)   
-  if [[ \${#PASSED_COMP_OPTS[@]} -ne 0 ]] ; then 
+  done< <(${Comp_TrueCmd} __completion__ \${COMP_CWORD} \${COMP_WORDS[@]})
+  if [[ \${#PASSED_COMP_OPTS[@]} -ne 0 ]] ; then
     compopt \${PASSED_COMP_OPTS[*]} ${Comp_UserCmd}
     compopt_rtn=$?
-    logger -t "${Comp_CompFnName}" -- "compopt returned \${compopt_rtn}"
+    (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
+      logger -t "${Comp_CompFnName}" -- "compopt returned \${compopt_rtn}"
   fi
-  logger -t "${Comp_CompFnName}" -- "current opts=$(compopt)" 
+  (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
+    logger -t "${Comp_CompFnName}" -- "current opts=$(compopt)"
   return 0
 }
 declare -f ${Comp_CompFnName}
 complete -F ${Comp_CompFnName} "${Comp_UserCmd}"
 complete -p | grep ${Comp_UserCmd}
-${Comp_UserCmd==Comp_TrueCmd?'':`alias ${Comp_UserCmd}="${Comp_TrueCmd}"`}  
+${Comp_UserCmd==Comp_TrueCmd?'':`alias ${Comp_UserCmd}="${Comp_TrueCmd}"`}
 alias | grep ${Comp_UserCmd}
-
+echo "${Comp_CompFn_DebugVar}=\${${Comp_CompFn_DebugVar}}"
 `;
   if (opts.dbg)
     console.error(script);
@@ -627,7 +676,7 @@ alias | grep ${Comp_UserCmd}
     console.log(script);
   else if (typeof writeFilename=='string')
     fs.writeFileSync(writeFilename,script);
-  else 
+  else
     throw new Error(`illegal value for parameter filename: ${writeFilename}`);
 }
 
@@ -644,9 +693,10 @@ Object.freeze(symbols);
 
 //exports.ParseCli=ParseCli;
 exports.parse=parse;
+exports.defaultCompletionErrorHandling=defaultCompletionErrorHandling;
 exports.completion=completion;
 exports.completionAsync=completionAsync;
-exports.parseToken=parseToken; // forwarded from parse-token.js 
+exports.parseToken=parseToken; // forwarded from parse-token.js
 exports.symbols=symbols;
 exports.loggerSync=loggerSync; // forwarded from logger.js
 exports.generateCompletionInterfaceScript=generateCompletionInterfaceScript;

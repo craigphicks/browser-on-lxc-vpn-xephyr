@@ -93,10 +93,20 @@ for (const str of testdata0) {
     //console.log(`---> ${n}, ${str}`);
     console.error(`---> completion ${n}, ${str}`);
     let testCompItem = { type:'completion', input: [n,a]};
-    try {
-      testCompItem.completions=completion(rootTable, n,a);
-    } catch(e) {
-      testCompItem.errorMessage=e.message;
+    let output={};
+    {
+      let r= completion(rootTable, n,a);
+      if (r.error)
+        output.errorMessage=r.error.message;
+      else if (r.parseError)
+        output.parseErrorMessage=r.parseError.message;
+      else {
+        output.tokens = r.tokens;
+        output.compOpts = r.compOpts;
+      }
+      testCompItem.output=output;
+    //catch(e) 
+    //  output.unexpectedError.message=e.message;
     }
     console.log(JSON.stringify(testCompItem,null,2));
   }
