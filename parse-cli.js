@@ -71,6 +71,11 @@ class ParseError extends Error {
   }
 }
 
+function concatSelf(a,b){
+  b.forEach((v)=>{a.push(v);});
+  return a;
+}
+
 class ParseCli {
   constructor(table=null, words=null, completionCWord=-1){
     this._table=null;
@@ -163,7 +168,7 @@ class ParseCli {
 
   createParseError(msg) {
     return new ParseError(
-      `"${this.state.completed} -ERR- ${this.state.words}", ${msg}`
+      `"${this.state.completed} (ERROR HERE =>) ${this.state.words}", ${msg}`
     );
   }
   wordIndex(){
@@ -306,27 +311,27 @@ class ParseCli {
           loggerSync('silent completion error: grammar needs to be fixed, '
             + 'trying to mix compOpts settings, '
             + 'changing non-default compOpts to default');
-          this.completion.candidates.concat(this.completion.candsWithCompOpts.tokens);
+          concatSelf(this.completion.candidatesthis.completion.candsWithCompOpts.tokens);
           this.completion.candsWithCompOpts=null;
         }
-        this.completion.candidates.concat(res);
+        concatSelf(this.completion.candidates,res);
       } else if (!Array.isArray(res) && res.tokens.length) {
         if (objectEqShallow(this.completion.defaultCompOpts, res.compOpts)){
           // ignore the compOpts part
           if (!this.completion.candidates)
             this.completion.candidates=[];
-          this.completion.candidates.concat(res.tokens);
+          concatSelf(this.completion.candidates,res.tokens);
         } else {
           if (this.completion.candsWithCompOpts) {
             if (objectEqShallow(
               this.completion.candsWithCompOpts.compOpts,
               res.compOpts)){
-              this.completion.candsWithCompOpts.tokens.concat(res.tokens);
+              concatSelf(this.completion.candsWithCompOpts.tokens, res.tokens);
             } else {
               loggerSync('silent completion error: grammar needs to be fixed, '
               + 'trying to mix compOpts settings, '
               + 'changing compOpts to existing non default compOpts');
-              this.completion.candsWithCompOpts.tokens.concat(res.tokens);
+              concatSelf(this.completion.candsWithCompOpts.tokens,res.tokens);
             }
           } else {
             this.completion.candsWithCompOpts = {
@@ -500,15 +505,23 @@ const defaultCompletionErrorHandling={
 Object.freeze(defaultCompletionErrorHandling);
 
 
+function stringToHexForBashEcho(s){
+  let h0 = Buffer.from(s).toString('hex'); // two digit hex string
+  var h1='';
+  for (let i=0; i<h0.length; i+=2)
+    h1=h1+'\\x'+h0.slice(i,i+2);
+  return h1;
+}
+
+
 // returns two-line string ready to be written to stdout
 // does not throw
-function completion(
+function completionForBash(
   table, completionIndex, words,
   completionErrorHandling=defaultCompletionErrorHandling,
   outstream=null,
   outcb=null,
-  errstream=null,
-  errcb=null)
+)
 {
 
   var ret={
@@ -517,9 +530,8 @@ function completion(
     parseError:null,
     error:null,
   };
-  if ((!!outstream!=!!outcb) || (!!errstream!=!!errcb)
-  || (!!outstream!=!!errstream)) {
-    ret.error=new Error('streams and callbacks must be all or nothing');
+  if (!!outstream!=!!outcb){
+    ret.error=new Error('stream and callback must be all or nothing');
   } else if (typeof completionIndex != 'number' || completionIndex<0){
     ret.error=new Error(
       `completionIndex argument expecting number>=0 but found ${completionIndex}`);
@@ -536,38 +548,39 @@ function completion(
 
   ////////////////////////////////////////
   // conversion to streams start here
-  let errcbPassed=false;
   if (ret.error){
     if (completionErrorHandling.errorToLogging)
       loggerSync(ret.error.message);
     if (completionErrorHandling.errorToOutput){
-      errstream.write('\n'+ret.error.message,errcb);
-      errcbPassed=true;
+      //errstream.write('\n'+ret.error.message,errcb);
+      //errcbPassed=true;
+      ret.tokens=[`[[Error: ${ret.error.message}]]`, ' '];
+      ret.compOpts=parseToken.defaultCompOpts();
+      ret.compOpts.nosort=true;
     }
   } else if (ret.parseError){
     if (completionErrorHandling.parseErrorToLogging)
       loggerSync(ret.parseError.message);
     if (completionErrorHandling.parseErrorToOutput){
-      errstream.write('\n'+ret.parseError.message+'\n',errcb);
-      //errstream.write('\n01234567890123456789',errcb);
-      errcbPassed=true;
+      // errstream.write('\n'+ret.parseError.message+'\n'
+      //   + "Use down then up arrow keys:\n"
+      // ,errcb);
+      // errcbPassed=true;
+      ret.tokens=[`[[ParseError: ${ret.parseError.message}]]`, ' '];
+      ret.compOpts=parseToken.defaultCompOpts();
+      ret.compOpts.nosort=true;
     }
   }
-  if (!errcbPassed)
-    errcb();
   // stdout must always be used to send two lines.
-  // Escape the tokens IFS characters (space,tab.newline)
-  // They should be 'reverse-escaped' on the other side before display,
-  // although it may be rare enough not to matter.
-  // ret.tokens.forEach((v,i)=>{
-  //   // we'll assume there are no already escaped 
-  //   ret.tokens[i]=v.replace(' ','\ ').replace('\t','\\t').replace('\n','\\n');
-  // });
-  // TODO: the above could mess up some 
+  // tokens are js-escaped here, and then js-unescaped in the bash interface script
   if (!ret.tokens)
-    ret.tokens=[];// hope the by pushing multiple options the prompt is regen'd
+    ret.tokens=[];
   if (!ret.compOpts)
     ret.compOpts={};
+  ret.tokens.forEach((t,i)=>{
+    //ret.tokens[i]=encodeURIComponent(t);
+    ret.tokens[i]=stringToHexForBashEcho(t);
+  });
   let strout = ( ret.tokens.join(' ') + "\n" ); // line with tokens
   let atmp=[];
   for (const k in ret.compOpts) {
@@ -578,32 +591,26 @@ function completion(
   outstream.write(strout,outcb);
 }
 
-async function completionAsync(
-  ostream,estream,
+
+async function completionBashAsync(
   table, completionIndex, words,
   completionErrorHandling=defaultCompletionErrorHandling,
 ){
-  let resolve1,resolve2;
+  let resolve1;
   let p1 = new Promise((r)=>{resolve1=r;});
-  let p2 = new Promise((r)=>{resolve2=r;});
-  completion(
+  completionForBash(
     table, completionIndex, words,
     completionErrorHandling,
-    ostream,(e)=>{
+    process.stdout,(e)=>{
       if (e)
-        loggerSync(`unexpected error writing ostream: ${e.messsage}`);
+        loggerSync(`unexpected error writing stdout: ${e.messsage}`);
       resolve1();
     },
-    estream,(e)=>{
-      if (e)
-        loggerSync(`unexpected error writing estream: ${e.messsage}`);
-      resolve2();
-    },
   );
-  await Promise.all([p1,p2]);
+  await p1;
 }
 
-function generateCompletionInterfaceScript(
+function generateCompletionBashInterfaceScript(
   writeFilename,
   mnemonic,
   userCmd=null,
@@ -639,12 +646,18 @@ unset -f ${Comp_CompFnName}
 
 function ${Comp_CompFnName} {
   local PASSED_COMP_OPTS=(), compopt_rtn='not set'
-  local tmperrfile=$(mktemp) 
-  (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
+  local tmperrfile=$(mktemp)
+  local total 
+  (("\${${Comp_CompFn_DebugVar}}">=2)) &&\
     logger -t "${Comp_CompFnName}" -- "COMP_CWORD=\${COMP_CWORD}, COMP_WORDS=\${COMP_WORDS[*]}"
   while true; do
     read -ra COMPREPLY
-    (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
+    total=\${#COMPREPLY[*]}
+    for (( i=0; i<=$(( $total -1 )); i++ ))
+    do 
+      COMPREPLY[$i]=$(echo -n -e "\${COMPREPLY[$i]}") 
+    done    
+    (("\${${Comp_CompFn_DebugVar}}">=2)) &&\
       logger -t "${Comp_CompFnName}" -- "COMPREPLY=\${COMPREPLY[*]}"
     read -ra PASSED_COMP_OPTS
     if (("\${${Comp_CompFn_DebugVar}}">=2)) ; then 
@@ -656,19 +669,21 @@ function ${Comp_CompFnName} {
   if [[ \${#PASSED_COMP_OPTS[@]} -ne 0 ]] ; then
     compopt \${PASSED_COMP_OPTS[*]} ${Comp_UserCmd}
     compopt_rtn=$?
-    (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
+    (("\${${Comp_CompFn_DebugVar}}">=2)) &&\
       logger -t "${Comp_CompFnName}" -- "compopt returned \${compopt_rtn}"
   fi
-  (("\${${Comp_CompFn_DebugVar}}">=2)) ||\
+  (("\${${Comp_CompFn_DebugVar}}">=2)) &&\
     logger -t "${Comp_CompFnName}" -- "current opts=$(compopt)"
   return 0
 }
 declare -f ${Comp_CompFnName}
 complete -F ${Comp_CompFnName} "${Comp_UserCmd}"
-complete -p | grep ${Comp_UserCmd}
 ${Comp_UserCmd==Comp_TrueCmd?'':`alias ${Comp_UserCmd}="${Comp_TrueCmd}"`}
-alias | grep ${Comp_UserCmd}
-echo "${Comp_CompFn_DebugVar}=\${${Comp_CompFn_DebugVar}}"
+if (("\${${Comp_CompFn_DebugVar}}">=1)) ; then
+  complete -p | grep ${Comp_UserCmd}
+  alias | grep ${Comp_UserCmd}
+  echo "${Comp_CompFn_DebugVar}=\${${Comp_CompFn_DebugVar}}"
+fi
 `;
   if (opts.dbg)
     console.error(script);
@@ -694,9 +709,8 @@ Object.freeze(symbols);
 //exports.ParseCli=ParseCli;
 exports.parse=parse;
 exports.defaultCompletionErrorHandling=defaultCompletionErrorHandling;
-exports.completion=completion;
-exports.completionAsync=completionAsync;
+exports.completionBashAsync=completionBashAsync;
 exports.parseToken=parseToken; // forwarded from parse-token.js
 exports.symbols=symbols;
 exports.loggerSync=loggerSync; // forwarded from logger.js
-exports.generateCompletionInterfaceScript=generateCompletionInterfaceScript;
+exports.generateCompletionBashInterfaceScript=generateCompletionBashInterfaceScript;

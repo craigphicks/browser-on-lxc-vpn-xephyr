@@ -29,13 +29,13 @@ class ParseString extends ParseToken {
   }
   parse(w){ return w;}
   completion(partial) { 
-    if (partial[partial.length-1]=='')
-      return ['hint:', this.hint()]; 
+    if (partial=='' && this.opts.hint && this.opts.hint.length)
+      return [this.hint(), ' ']; 
     else
       return [];
   }
   // eslint-disable-next-line no-unused-vars
-  hint(){ return `[[${this.hintStr}]]`; }
+  hint(){ return `[[hint: ${this.opts.hint}]]`; }
 }
 
 
@@ -192,7 +192,7 @@ class ParseFilenameViaCompgen extends ParseToken {
         return false;
       if (fs.lstatSync(realPath).isDirectory())  
         if (fn[fn.length-1]!='/')
-          af[index]+='/';
+          ;//af[index]+='/';
     });
     return  {tokens:af,compOpts:this.opts.compOpts}; 
   }
