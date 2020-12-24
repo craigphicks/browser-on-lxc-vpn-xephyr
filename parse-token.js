@@ -17,9 +17,7 @@ class ParseToken {
   constructor(){}
   parse(w){ return w;}
   // eslint-disable-next-line no-unused-vars
-  completion(partial) { return []; }
-  // eslint-disable-next-line no-unused-vars
-  hint(w){ return 'String'; }
+  completion() { return []; }
 }
 
 class ParseString extends ParseToken {
